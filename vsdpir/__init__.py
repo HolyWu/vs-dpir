@@ -56,6 +56,9 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
     model_path = os.path.join(os.path.dirname(__file__), model_name)
 
     device = torch.device(device_type, device_index)
+    if device_type == 'cuda':
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
 
     model = net(in_nc=4, out_nc=3, nc=[64, 128, 256, 512], nb=4, act_mode='R', downsample_mode='strideconv', upsample_mode='convtranspose')
     model.load_state_dict(torch.load(model_path), strict=True)
@@ -94,11 +97,11 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
     arr = np.stack([np.asarray(f.get_read_array(plane)) for plane in range(f.format.num_planes)])
-    return torch.from_numpy(arr).float().unsqueeze(0)
+    return torch.from_numpy(arr).unsqueeze(0)
 
 
 def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
-    arr = t.data.squeeze().float().cpu().numpy()
+    arr = t.data.squeeze().cpu().numpy()
     fout = f.copy()
     for plane in range(fout.format.num_planes):
         np.copyto(np.asarray(fout.get_write_array(plane)), arr[plane, ...])
