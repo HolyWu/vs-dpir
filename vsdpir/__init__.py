@@ -1,5 +1,5 @@
 import numpy as np
-import os.path
+import os
 import torch
 import vapoursynth as vs
 from . import utils_model
@@ -12,13 +12,13 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
     Parameters:
         clip: Clip to process. Only planar format with float sample type of 32 bit depth is supported.
-        
+
         strength: Strength for deblocking or denoising. Must be greater than 0. Defaults to 50.0 for 'deblock' task, 5.0 for 'denoise' task.
-        
+
         task: Task to perform. Must be 'deblock' or 'denoise'.
-        
+
         device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
-        
+
         device_index: Device ordinal for the device type.
     '''
     if not isinstance(clip, vs.VideoNode):
@@ -42,6 +42,11 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
     if device_type == 'cuda' and not torch.cuda.is_available():
         raise vs.Error('DPIR: CUDA is not available')
 
+    device = torch.device(device_type, device_index)
+    if device_type == 'cuda':
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
+
     if task == 'deblock':
         if strength is None:
             strength = 50.0
@@ -55,19 +60,10 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
     model_path = os.path.join(os.path.dirname(__file__), model_name)
 
-    device = torch.device(device_type, device_index)
-    if device_type == 'cuda':
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
-
     model = net(in_nc=4, out_nc=3, nc=[64, 128, 256, 512], nb=4, act_mode='R', downsample_mode='strideconv', upsample_mode='convtranspose')
     model.load_state_dict(torch.load(model_path), strict=True)
     model.eval()
-    for _, v in model.named_parameters():
-        v.requires_grad = False
     model = model.to(device)
-
-    torch.cuda.empty_cache()
 
     def deblock(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         img_L = frame_to_tensor(f)
@@ -76,7 +72,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
         img_L = torch.cat((img_L, noise_level_map), dim=1)
         img_L = img_L.to(device)
 
-        img_E = model(img_L)
+        with torch.no_grad():
+            img_E = model(img_L)
 
         return tensor_to_frame(img_E, f)
 
@@ -85,10 +82,11 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
         img_L = torch.cat((img_L, torch.FloatTensor([strength]).repeat(1, 1, img_L.shape[2], img_L.shape[3])), dim=1)
         img_L = img_L.to(device)
 
-        if img_L.size(2) // 8 == 0 and img_L.size(3) // 8 == 0:
-            img_E = model(img_L)
-        else:
-            img_E = utils_model.test_mode(model, img_L, refield=64, mode=5)
+        with torch.no_grad():
+            if img_L.size(2) // 8 == 0 and img_L.size(3) // 8 == 0:
+                img_E = model(img_L)
+            else:
+                img_E = utils_model.test_mode(model, img_L, refield=64, mode=5)
 
         return tensor_to_frame(img_E, f)
 
@@ -104,5 +102,5 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.data.squeeze().cpu().numpy()
     fout = f.copy()
     for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout.get_write_array(plane)), arr[plane, ...])
+        np.copyto(np.asarray(fout.get_write_array(plane)), arr[plane, :, :])
     return fout

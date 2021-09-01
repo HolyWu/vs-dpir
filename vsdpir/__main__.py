@@ -2,7 +2,7 @@ import os.path
 import requests
 from tqdm import tqdm
 
-def download_model(url) -> None:
+def download_model(url: str) -> None:
     filename = url.split('/')[-1]
     r = requests.get(url, stream=True)
     with open(os.path.join(os.path.dirname(__file__), filename), 'wb') as f:
