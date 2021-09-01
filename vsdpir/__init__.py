@@ -69,23 +69,11 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
     if fp16:
         model = model.half()
 
-    def deblock(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
+    noise_level_map = torch.FloatTensor([strength]).repeat(1, 1, clip.height, clip.width)
+
+    def dpir(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         img_L = frame_to_tensor(f)
-        noise_level = torch.FloatTensor([strength])
-        noise_level_map = torch.ones((1, 1, img_L.shape[2], img_L.shape[3])).mul_(noise_level).float()
         img_L = torch.cat((img_L, noise_level_map), dim=1)
-        img_L = img_L.to(device)
-        if fp16:
-            img_L = img_L.half()
-
-        with torch.no_grad():
-            img_E = model(img_L)
-
-        return tensor_to_frame(img_E, f)
-
-    def denoise(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
-        img_L = frame_to_tensor(f)
-        img_L = torch.cat((img_L, torch.FloatTensor([strength]).repeat(1, 1, img_L.shape[2], img_L.shape[3])), dim=1)
         img_L = img_L.to(device)
         if fp16:
             img_L = img_L.half()
@@ -98,7 +86,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
         return tensor_to_frame(img_E, f)
 
-    return clip.std.ModifyFrame(clips=clip, selector=eval(task))
+    return clip.std.ModifyFrame(clips=clip, selector=dpir)
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
