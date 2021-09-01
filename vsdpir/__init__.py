@@ -6,7 +6,7 @@ from . import utils_model
 from .network_unet import UNetRes as net
 
 
-def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_type: str='cuda', device_index: int=0) -> vs.VideoNode:
+def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
     '''
     DPIR: Deep Plug-and-Play Image Restoration
 
@@ -20,6 +20,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
         device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
 
         device_index: Device ordinal for the device type.
+
+        fp16: fp16 mode for faster and more lightweight inference on cards with Tensor Cores.
     '''
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: This is not a clip')
@@ -64,6 +66,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
     model.load_state_dict(torch.load(model_path), strict=True)
     model.eval()
     model = model.to(device)
+    if fp16:
+        model = model.half()
 
     def deblock(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         img_L = frame_to_tensor(f)
@@ -71,6 +75,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
         noise_level_map = torch.ones((1, 1, img_L.shape[2], img_L.shape[3])).mul_(noise_level).float()
         img_L = torch.cat((img_L, noise_level_map), dim=1)
         img_L = img_L.to(device)
+        if fp16:
+            img_L = img_L.half()
 
         with torch.no_grad():
             img_E = model(img_L)
@@ -81,6 +87,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
         img_L = frame_to_tensor(f)
         img_L = torch.cat((img_L, torch.FloatTensor([strength]).repeat(1, 1, img_L.shape[2], img_L.shape[3])), dim=1)
         img_L = img_L.to(device)
+        if fp16:
+            img_L = img_L.half()
 
         with torch.no_grad():
             if img_L.size(2) // 8 == 0 and img_L.size(3) // 8 == 0:
