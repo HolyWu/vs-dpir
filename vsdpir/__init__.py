@@ -90,13 +90,13 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
-    arr = np.stack([np.asarray(f.get_read_array(plane)) for plane in range(f.format.num_planes)])
+    arr = np.stack([np.asarray(f.get_read_array(plane) if vs.__api_version__.api_major < 4 else f[plane]) for plane in range(f.format.num_planes)])
     return torch.from_numpy(arr).unsqueeze(0)
 
 
 def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
-    arr = t.data.squeeze().cpu().numpy()
+    arr = t.squeeze(0).detach().cpu().numpy()
     fout = f.copy()
     for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout.get_write_array(plane)), arr[plane, :, :])
+        np.copyto(np.asarray(fout.get_write_array(plane) if vs.__api_version__.api_major < 4 else fout[plane]), arr[plane, :, :])
     return fout
