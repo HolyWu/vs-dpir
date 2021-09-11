@@ -2,8 +2,10 @@ import numpy as np
 import os
 import torch
 import vapoursynth as vs
-from . import utils_model
-from .network_unet import UNetRes as net
+from .network_unet import UNetRes
+from .utils_model import test_mode
+
+vs_api_below4 = vs.__api_version__.api_major < 4
 
 
 def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
@@ -62,12 +64,12 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
     model_path = os.path.join(os.path.dirname(__file__), model_name)
 
-    model = net(in_nc=4, out_nc=3, nc=[64, 128, 256, 512], nb=4, act_mode='R', downsample_mode='strideconv', upsample_mode='convtranspose')
+    model = UNetRes(in_nc=4, out_nc=3, nc=[64, 128, 256, 512], nb=4, act_mode='R', downsample_mode='strideconv', upsample_mode='convtranspose')
     model.load_state_dict(torch.load(model_path), strict=True)
     model.eval()
-    model = model.to(device)
+    model.to(device)
     if fp16:
-        model = model.half()
+        model.half()
 
     noise_level_map = torch.FloatTensor([strength]).repeat(1, 1, clip.height, clip.width)
 
@@ -82,7 +84,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
             if img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
                 img_E = model(img_L)
             else:
-                img_E = utils_model.test_mode(model, img_L, refield=64, mode=5)
+                img_E = test_mode(model, img_L, refield=64, mode=5)
 
         return tensor_to_frame(img_E, f)
 
@@ -90,7 +92,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
-    arr = np.stack([np.asarray(f.get_read_array(plane) if vs.__api_version__.api_major < 4 else f[plane]) for plane in range(f.format.num_planes)])
+    arr = np.stack([np.asarray(f.get_read_array(plane) if vs_api_below4 else f[plane]) for plane in range(f.format.num_planes)])
     return torch.from_numpy(arr).unsqueeze(0)
 
 
@@ -98,5 +100,5 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.squeeze(0).detach().cpu().numpy()
     fout = f.copy()
     for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout.get_write_array(plane) if vs.__api_version__.api_major < 4 else fout[plane]), arr[plane, :, :])
+        np.copyto(np.asarray(fout.get_write_array(plane) if vs_api_below4 else fout[plane]), arr[plane, :, :])
     return fout
