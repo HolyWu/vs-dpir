@@ -79,7 +79,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
             img_L = img_L.half()
 
         with torch.no_grad():
-            if img_L.size(2) // 8 == 0 and img_L.size(3) // 8 == 0:
+            if img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
                 img_E = model(img_L)
             else:
                 img_E = utils_model.test_mode(model, img_L, refield=64, mode=5)
