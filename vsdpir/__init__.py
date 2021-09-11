@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import os
 import torch
@@ -89,7 +90,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
 
         with torch.no_grad():
             if tile_x > 0 and tile_y > 0:
-                tile_process(img_L, tile_x, tile_y, tile_pad, model)
+                img_E = tile_process(img_L, tile_x, tile_y, tile_pad, model)
             elif img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
                 img_E = model(img_L)
             else:
@@ -114,10 +115,11 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
 
 
 def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: UNetRes) -> torch.Tensor:
-    height, width = img.shape[-2:]
+    batch, _, height, width = img.shape
+    output_shape = (batch, 3, height, width)
 
     # start with black image
-    output = img.new_zeros(img.shape)
+    output = img.new_zeros(output_shape)
 
     tiles_x = math.ceil(width / tile_x)
     tiles_y = math.ceil(height / tile_y)
