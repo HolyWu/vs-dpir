@@ -8,7 +8,8 @@ from .utils_model import test_mode
 vs_api_below4 = vs.__api_version__.api_major < 4
 
 
-def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
+def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: int=0, tile_y: int=0, tile_pad: int=0,
+         device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
     '''
     DPIR: Deep Plug-and-Play Image Restoration
 
@@ -18,6 +19,12 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
         strength: Strength for deblocking or denoising. Must be greater than 0. Defaults to 50.0 for 'deblock' task, 5.0 for 'denoise' task.
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
+
+        tile_x, tile_y: Tile width and height respectively, 0 for no tiling.
+            It's recommended that the input's width and height is divisible by the tile's width and height respectively.
+            Set it to the maximum value that your GPU supports to reduce its impact on the output.
+
+        tile_pad: Tile padding.
 
         device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
 
@@ -81,7 +88,9 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', device_t
             img_L = img_L.half()
 
         with torch.no_grad():
-            if img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
+            if tile_x > 0 and tile_y > 0:
+                tile_process(img_L, tile_x, tile_y, tile_pad, model)
+            elif img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
                 img_E = model(img_L)
             else:
                 img_E = test_mode(model, img_L, refield=64, mode=5)
@@ -102,3 +111,62 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     for plane in range(fout.format.num_planes):
         np.copyto(np.asarray(fout.get_write_array(plane) if vs_api_below4 else fout[plane]), arr[plane, :, :])
     return fout
+
+
+def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: UNetRes) -> torch.Tensor:
+    height, width = img.shape[-2:]
+
+    # start with black image
+    output = img.new_zeros(img.shape)
+
+    tiles_x = math.ceil(width / tile_x)
+    tiles_y = math.ceil(height / tile_y)
+
+    # loop over all tiles
+    for y in range(tiles_y):
+        for x in range(tiles_x):
+            # extract tile from input image
+            ofs_x = x * tile_x
+            ofs_y = y * tile_y
+
+            # input tile area on total image
+            input_start_x = ofs_x
+            input_end_x = min(ofs_x + tile_x, width)
+            input_start_y = ofs_y
+            input_end_y = min(ofs_y + tile_y, height)
+
+            # input tile area on total image with padding
+            input_start_x_pad = max(input_start_x - tile_pad, 0)
+            input_end_x_pad = min(input_end_x + tile_pad, width)
+            input_start_y_pad = max(input_start_y - tile_pad, 0)
+            input_end_y_pad = min(input_end_y + tile_pad, height)
+
+            # input tile dimensions
+            input_tile_width = input_end_x - input_start_x
+            input_tile_height = input_end_y - input_start_y
+
+            input_tile = img[:, :, input_start_y_pad:input_end_y_pad, input_start_x_pad:input_end_x_pad]
+
+            # process tile
+            if input_tile.size(2) % 8 == 0 and input_tile.size(3) % 8 == 0:
+                output_tile = model(input_tile)
+            else:
+                output_tile = test_mode(model, input_tile, refield=64, mode=5)
+
+            # output tile area on total image
+            output_start_x = input_start_x
+            output_end_x = input_end_x
+            output_start_y = input_start_y
+            output_end_y = input_end_y
+
+            # output tile area without padding
+            output_start_x_tile = (input_start_x - input_start_x_pad)
+            output_end_x_tile = output_start_x_tile + input_tile_width
+            output_start_y_tile = (input_start_y - input_start_y_pad)
+            output_end_y_tile = output_start_y_tile + input_tile_height
+
+            # put tile into output image
+            output[:, :, output_start_y:output_end_y, output_start_x:output_end_x] = \
+                output_tile[:, :, output_start_y_tile:output_end_y_tile, output_start_x_tile:output_end_x_tile]
+
+    return output
