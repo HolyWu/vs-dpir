@@ -15,7 +15,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
     DPIR: Deep Plug-and-Play Image Restoration
 
     Parameters:
-        clip: Clip to process. Only planar format with float sample type of 32 bit depth is supported.
+        clip: Clip to process. Only planar RGB and Gray formats with float sample type of 32 bit depth are supported.
 
         strength: Strength for deblocking or denoising. Must be greater than 0. Defaults to 50.0 for 'deblock' task, 5.0 for 'denoise' task.
 
@@ -36,8 +36,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: This is not a clip')
 
-    if clip.format.id != vs.RGBS:
-        raise vs.Error('DPIR: Only RGBS format is supported')
+    if clip.format.id not in [vs.RGBS, vs.GRAYS]:
+        raise vs.Error('DPIR: Only RGBS and GRAYS formats are supported')
 
     if strength is not None and strength <= 0:
         raise vs.Error('DPIR: strength must be greater than 0')
@@ -54,6 +54,8 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
     if device_type == 'cuda' and not torch.cuda.is_available():
         raise vs.Error('DPIR: CUDA is not available')
 
+    is_rgb = clip.format.color_family == vs.RGB
+
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
         torch.backends.cudnn.enabled = True
@@ -63,16 +65,16 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
         if strength is None:
             strength = 50.0
         strength /= 100
-        model_name = 'drunet_deblocking_color.pth'
+        model_name = 'drunet_deblocking_color.pth' if is_rgb else 'drunet_deblocking_grayscale.pth'
     else:
         if strength is None:
             strength = 5.0
         strength /= 255
-        model_name = 'drunet_color.pth'
+        model_name = 'drunet_color.pth' if is_rgb else 'drunet_gray.pth'
 
     model_path = os.path.join(os.path.dirname(__file__), model_name)
 
-    model = UNetRes(in_nc=4, out_nc=3, nc=[64, 128, 256, 512], nb=4, act_mode='R', downsample_mode='strideconv', upsample_mode='convtranspose')
+    model = UNetRes(in_nc=4 if is_rgb else 2, out_nc=3 if is_rgb else 1)
     model.load_state_dict(torch.load(model_path), strict=True)
     model.eval()
     model.to(device)
@@ -115,8 +117,8 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
 
 
 def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: UNetRes) -> torch.Tensor:
-    batch, _, height, width = img.shape
-    output_shape = (batch, 3, height, width)
+    batch, channel, height, width = img.shape
+    output_shape = (batch, channel - 1, height, width)
 
     # start with black image
     output = img.new_zeros(output_shape)

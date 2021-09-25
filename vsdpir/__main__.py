@@ -1,4 +1,4 @@
-import os.path
+import os
 import requests
 from tqdm import tqdm
 
@@ -14,3 +14,5 @@ def download_model(url: str) -> None:
 if __name__ == '__main__':
     download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_color.pth')
     download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_deblocking_color.pth')
+    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_deblocking_grayscale.pth')
+    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_gray.pth')
