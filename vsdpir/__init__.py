@@ -98,7 +98,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
             else:
                 img_E = test_mode(model, img_L, refield=64, mode=5)
 
-        return tensor_to_frame(img_E, f)
+        return tensor_to_frame(img_E, f.copy())
 
     return clip.std.ModifyFrame(clips=clip, selector=dpir)
 
@@ -110,10 +110,9 @@ def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
 
 def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.squeeze(0).detach().cpu().numpy()
-    fout = f.copy()
-    for plane in range(fout.format.num_planes):
-        np.copyto(np.asarray(fout.get_write_array(plane) if vs_api_below4 else fout[plane]), arr[plane, :, :])
-    return fout
+    for plane in range(f.format.num_planes):
+        np.copyto(np.asarray(f.get_write_array(plane) if vs_api_below4 else f[plane]), arr[plane, :, :])
+    return f
 
 
 def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: UNetRes) -> torch.Tensor:

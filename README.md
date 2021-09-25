@@ -1,7 +1,5 @@
 # DPIR
-DPIR: Deep Plug-and-Play Image Restoration
-
-Ported from https://github.com/cszn/DPIR
+DPIR function for VapourSynth, based on https://github.com/cszn/DPIR.
 
 
 ## Dependencies
