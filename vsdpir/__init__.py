@@ -83,6 +83,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
 
     noise_level_map = torch.FloatTensor([strength]).repeat(1, 1, clip.height, clip.width)
 
+    @torch.inference_mode()
     def dpir(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         img_L = frame_to_tensor(f)
         img_L = torch.cat((img_L, noise_level_map), dim=1)
@@ -90,13 +91,12 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
         if fp16:
             img_L = img_L.half()
 
-        with torch.no_grad():
-            if tile_x > 0 and tile_y > 0:
-                img_E = tile_process(img_L, tile_x, tile_y, tile_pad, model)
-            elif img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
-                img_E = model(img_L)
-            else:
-                img_E = test_mode(model, img_L, refield=64, mode=5)
+        if tile_x > 0 and tile_y > 0:
+            img_E = tile_process(img_L, tile_x, tile_y, tile_pad, model)
+        elif img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
+            img_E = model(img_L)
+        else:
+            img_E = test_mode(model, img_L, refield=64, mode=5)
 
         return tensor_to_frame(img_E, f.copy())
 
