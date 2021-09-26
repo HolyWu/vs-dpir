@@ -66,6 +66,7 @@ def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: 
             strength = 50.0
         strength /= 100
         model_name = 'drunet_deblocking_color.pth' if is_rgb else 'drunet_deblocking_grayscale.pth'
+        clip = clip.std.Limiter()
     else:
         if strength is None:
             strength = 5.0
