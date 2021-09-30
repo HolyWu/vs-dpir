@@ -57,6 +57,9 @@ def DPIR(clip: vs.VideoNode, strength: Optional[float] = None, task: str = 'deno
     if device_type == 'cuda' and not torch.cuda.is_available():
         raise vs.Error('DPIR: CUDA is not available')
 
+    if os.path.getsize(os.path.join(os.path.dirname(__file__), 'drunet_color.pth')) == 0:
+        raise vs.Error("DPIR: model files have not been downloaded. run 'python -m vsdpir' first")
+
     is_rgb = clip.format.color_family == vs.RGB
 
     device = torch.device(device_type, device_index)
