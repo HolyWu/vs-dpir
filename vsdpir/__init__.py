@@ -1,16 +1,19 @@
 import math
-import numpy as np
 import os
+from typing import Optional
+
+import numpy as np
 import torch
 import vapoursynth as vs
+
 from .network_unet import UNetRes
 from .utils_model import test_mode
 
 vs_api_below4 = vs.__api_version__.api_major < 4
 
 
-def DPIR(clip: vs.VideoNode, strength: float=None, task: str='denoise', tile_x: int=0, tile_y: int=0, tile_pad: int=0,
-         device_type: str='cuda', device_index: int=0, fp16: bool=False) -> vs.VideoNode:
+def DPIR(clip: vs.VideoNode, strength: Optional[float] = None, task: str = 'denoise', tile_x: int = 0, tile_y: int = 0, tile_pad: int = 0,
+         device_type: str = 'cuda', device_index: int = 0, fp16: bool = False) -> vs.VideoNode:
     '''
     DPIR: Deep Plug-and-Play Image Restoration
 
