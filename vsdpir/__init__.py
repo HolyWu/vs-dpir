@@ -6,8 +6,9 @@ import numpy as np
 import torch
 import vapoursynth as vs
 
-from .network_unet import UNetRes
 from .utils_model import test_mode
+
+dirname = os.path.dirname(__file__)
 
 
 def DPIR(clip: vs.VideoNode,
@@ -18,7 +19,9 @@ def DPIR(clip: vs.VideoNode,
          tile_pad: int = 0,
          device_type: str = 'cuda',
          device_index: int = 0,
-         fp16: bool = False) -> vs.VideoNode:
+         fp16: bool = False,
+         trt: bool = False,
+         save_trt_model: bool = False) -> vs.VideoNode:
     '''
     DPIR: Deep Plug-and-Play Image Restoration
 
@@ -40,6 +43,14 @@ def DPIR(clip: vs.VideoNode,
         device_index: Device ordinal for the device type.
 
         fp16: fp16 mode for faster and more lightweight inference on cards with Tensor Cores.
+
+        trt: Use TensorRT model to accelerate inference.
+
+        save_trt_model: Save the converted TensorRT model and does no inference. One-frame evaluation is enough.
+            Each model can only work with a specific dimension, hence you must save the model first for dimensions which have not been converted.
+            Note that DPIR requires mod-8 dimensions, hence you must provide a clip with mod-8 dimensions so as to save the model with correct dimensions.
+            Things get complicated if you are going to use tiling because you will have to use tile_size+tile_pad as the clip's dimensions.
+            Last but not least, models are not portable across platforms or TensorRT versions and are specific to the exact GPU model they were built on.
     '''
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: This is not a clip')
@@ -62,10 +73,17 @@ def DPIR(clip: vs.VideoNode,
     if device_type == 'cuda' and not torch.cuda.is_available():
         raise vs.Error('DPIR: CUDA is not available')
 
-    if os.path.getsize(os.path.join(os.path.dirname(__file__), 'drunet_color.pth')) == 0:
+    if trt and save_trt_model:
+        raise vs.Error('DPIR: both trt and save_trt_model cannot be True at the same time')
+
+    if (trt or save_trt_model) and device_type == 'cpu':
+        raise vs.Error('DPIR: TensorRT is not supported for CPU device')
+
+    if os.path.getsize(os.path.join(dirname, 'drunet_color.pth')) == 0:
         raise vs.Error("DPIR: model files have not been downloaded. run 'python -m vsdpir' first")
 
     is_rgb = clip.format.color_family == vs.RGB
+    c_g = 'color' if is_rgb else 'gray'
 
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
@@ -73,25 +91,43 @@ def DPIR(clip: vs.VideoNode,
         torch.backends.cudnn.benchmark = True
 
     if task == 'deblock':
+        trt_model_name = f'drunet_deblocking_{c_g}_trt_{clip.width}x{clip.height}{"_fp16" if fp16 else ""}.pth'
+        model_name = trt_model_name if trt else f'drunet_deblocking_{c_g}.pth'
         if strength is None:
             strength = 50.0
         strength /= 100
-        model_name = 'drunet_deblocking_color.pth' if is_rgb else 'drunet_deblocking_grayscale.pth'
         clip = clip.std.Limiter()
     else:
+        trt_model_name = f'drunet_{c_g}_trt_{clip.width}x{clip.height}{"_fp16" if fp16 else ""}.pth'
+        model_name = trt_model_name if trt else f'drunet_{c_g}.pth'
         if strength is None:
             strength = 5.0
         strength /= 255
-        model_name = 'drunet_color.pth' if is_rgb else 'drunet_gray.pth'
 
-    model_path = os.path.join(os.path.dirname(__file__), model_name)
+    model_path = os.path.join(dirname, model_name)
+    trt_model_path = os.path.join(dirname, trt_model_name)
 
-    model = UNetRes(in_nc=4 if is_rgb else 2, out_nc=3 if is_rgb else 1)
+    if trt:
+        from torch2trt import TRTModule
+        model = TRTModule()
+    else:
+        from .network_unet import UNetRes
+        model = UNetRes(in_nc=4 if is_rgb else 2, out_nc=3 if is_rgb else 1)
+
     model.load_state_dict(torch.load(model_path), strict=True)
     model.eval()
     model.to(device)
     if fp16:
         model.half()
+
+    if save_trt_model:
+        with torch.inference_mode():
+            from torch2trt import torch2trt
+            x = torch.empty((1, 4 if is_rgb else 2, clip.height, clip.width), dtype=torch.half if fp16 else torch.float, device=device)
+            model_trt = torch2trt(model, [x], fp16_mode=fp16)
+            torch.save(model_trt.state_dict(), trt_model_path)
+            vs.core.log_message(1, f"'{trt_model_path}' saved successfully")
+            return clip
 
     noise_level_map = torch.FloatTensor([strength]).repeat(1, 1, clip.height, clip.width)
 
@@ -127,7 +163,7 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     return f
 
 
-def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: UNetRes) -> torch.Tensor:
+def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: torch.nn.Module) -> torch.Tensor:
     batch, channel, height, width = img.shape
     output_shape = (batch, channel - 1, height, width)
 
