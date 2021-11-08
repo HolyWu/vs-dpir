@@ -6,8 +6,6 @@ import numpy as np
 import torch
 import vapoursynth as vs
 
-from .utils_model import test_mode
-
 dirname = os.path.dirname(__file__)
 
 
@@ -144,7 +142,7 @@ def DPIR(clip: vs.VideoNode,
         elif img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
             img_E = model(img_L)
         else:
-            img_E = test_mode(model, img_L, refield=64, mode=5)
+            img_E = mod_pad(img_L, 8, model)
 
         return tensor_to_frame(img_E, f.copy())
 
@@ -202,7 +200,7 @@ def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, mod
             if input_tile.size(2) % 8 == 0 and input_tile.size(3) % 8 == 0:
                 output_tile = model(input_tile)
             else:
-                output_tile = test_mode(model, input_tile, refield=64, mode=5)
+                output_tile = mod_pad(input_tile, 8, model)
 
             # output tile area on total image
             output_start_x = input_start_x
@@ -221,3 +219,20 @@ def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, mod
                 output_tile[:, :, output_start_y_tile:output_end_y_tile, output_start_x_tile:output_end_x_tile]
 
     return output
+
+
+def mod_pad(img: torch.Tensor, modulo: int, model: torch.nn.Module) -> torch.Tensor:
+    from torch.nn import functional as F
+
+    mod_pad_h, mod_pad_w = 0, 0
+    h, w = img.shape[2:]
+
+    if h % modulo != 0:
+        mod_pad_h = modulo - h % modulo
+
+    if w % modulo != 0:
+        mod_pad_w = modulo - w % modulo
+
+    img = F.pad(img, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
+    output = model(img)
+    return output[:, :, :h, :w]
