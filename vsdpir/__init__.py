@@ -9,8 +9,6 @@ import vapoursynth as vs
 from .network_unet import UNetRes
 from .utils_model import test_mode
 
-vs_api_below4 = vs.__api_version__.api_major < 4
-
 
 def DPIR(clip: vs.VideoNode,
          strength: Optional[float] = None,
@@ -25,7 +23,7 @@ def DPIR(clip: vs.VideoNode,
     DPIR: Deep Plug-and-Play Image Restoration
 
     Parameters:
-        clip: Clip to process. Only planar RGB and Gray formats with float sample type of 32 bit depth are supported.
+        clip: Clip to process. Only RGB and Gray formats with float sample type of 32 bit depth are supported.
 
         strength: Strength for deblocking or denoising. Must be greater than 0. Defaults to 50.0 for 'deblock' task, 5.0 for 'denoise' task.
 
@@ -118,14 +116,14 @@ def DPIR(clip: vs.VideoNode,
 
 
 def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
-    arr = np.stack([np.asarray(f.get_read_array(plane) if vs_api_below4 else f[plane]) for plane in range(f.format.num_planes)])
+    arr = np.stack([np.asarray(f[plane]) for plane in range(f.format.num_planes)])
     return torch.from_numpy(arr).unsqueeze(0)
 
 
 def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     arr = t.squeeze(0).detach().cpu().numpy()
     for plane in range(f.format.num_planes):
-        np.copyto(np.asarray(f.get_write_array(plane) if vs_api_below4 else f[plane]), arr[plane, :, :])
+        np.copyto(np.asarray(f[plane]), arr[plane, :, :])
     return f
 
 
