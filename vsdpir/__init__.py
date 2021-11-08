@@ -46,9 +46,7 @@ def DPIR(clip: vs.VideoNode,
 
         save_trt_model: Save the converted TensorRT model and does no inference. One-frame evaluation is enough.
             Each model can only work with a specific dimension, hence you must save the model first for dimensions which have not been converted.
-            Note that DPIR requires mod-8 dimensions, hence you must provide a clip with mod-8 dimensions so as to save the model with correct dimensions.
-            Things get complicated if you are going to use tiling because you will have to use tile_size+tile_pad as the clip's dimensions.
-            Last but not least, models are not portable across platforms or TensorRT versions and are specific to the exact GPU model they were built on.
+            Keep in mind that models are not portable across platforms or TensorRT versions and are specific to the exact GPU model they were built on.
     '''
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: This is not a clip')
@@ -83,20 +81,27 @@ def DPIR(clip: vs.VideoNode,
     is_rgb = clip.format.color_family == vs.RGB
     c_g = 'color' if is_rgb else 'gray'
 
+    if tile_x > 0 and tile_y > 0:
+        trt_width = (min(tile_x + tile_pad, clip.width) + 7) & ~7
+        trt_height = (min(tile_y + tile_pad, clip.height) + 7) & ~7
+    else:
+        trt_width = (clip.width + 7) & ~7
+        trt_height = (clip.height + 7) & ~7
+
     device = torch.device(device_type, device_index)
     if device_type == 'cuda':
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
 
     if task == 'deblock':
-        trt_model_name = f'drunet_deblocking_{c_g}_trt_{clip.width}x{clip.height}{"_fp16" if fp16 else ""}.pth'
+        trt_model_name = f'drunet_deblocking_{c_g}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
         model_name = trt_model_name if trt else f'drunet_deblocking_{c_g}.pth'
         if strength is None:
             strength = 50.0
         strength /= 100
         clip = clip.std.Limiter()
     else:
-        trt_model_name = f'drunet_{c_g}_trt_{clip.width}x{clip.height}{"_fp16" if fp16 else ""}.pth'
+        trt_model_name = f'drunet_{c_g}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
         model_name = trt_model_name if trt else f'drunet_{c_g}.pth'
         if strength is None:
             strength = 5.0
@@ -121,7 +126,7 @@ def DPIR(clip: vs.VideoNode,
     if save_trt_model:
         with torch.inference_mode():
             from torch2trt import torch2trt
-            x = torch.empty((1, 4 if is_rgb else 2, clip.height, clip.width), dtype=torch.half if fp16 else torch.float, device=device)
+            x = torch.empty((1, 4 if is_rgb else 2, trt_height, trt_width), dtype=torch.half if fp16 else torch.float, device=device)
             model_trt = torch2trt(model, [x], fp16_mode=fp16)
             torch.save(model_trt.state_dict(), trt_model_path)
             vs.core.log_message(1, f"'{trt_model_path}' saved successfully")
