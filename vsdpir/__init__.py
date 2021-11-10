@@ -9,17 +9,19 @@ import vapoursynth as vs
 dirname = os.path.dirname(__file__)
 
 
-def DPIR(clip: vs.VideoNode,
-         strength: Optional[float] = None,
-         task: str = 'denoise',
-         tile_x: int = 0,
-         tile_y: int = 0,
-         tile_pad: int = 0,
-         device_type: str = 'cuda',
-         device_index: int = 0,
-         fp16: bool = False,
-         trt: bool = False,
-         save_trt_model: bool = False) -> vs.VideoNode:
+def DPIR(
+    clip: vs.VideoNode,
+    strength: Optional[float] = None,
+    task: str = 'denoise',
+    tile_x: int = 0,
+    tile_y: int = 0,
+    tile_pad: int = 0,
+    device_type: str = 'cuda',
+    device_index: int = 0,
+    fp16: bool = False,
+    trt: bool = False,
+    save_trt_model: bool = False,
+) -> vs.VideoNode:
     '''
     DPIR: Deep Plug-and-Play Image Restoration
 
@@ -112,9 +114,11 @@ def DPIR(clip: vs.VideoNode,
 
     if trt:
         from torch2trt import TRTModule
+
         model = TRTModule()
     else:
         from .network_unet import UNetRes
+
         model = UNetRes(in_nc=4 if is_rgb else 2, out_nc=3 if is_rgb else 1)
 
     model.load_state_dict(torch.load(model_path), strict=True)
@@ -126,6 +130,7 @@ def DPIR(clip: vs.VideoNode,
     if save_trt_model:
         with torch.inference_mode():
             from torch2trt import torch2trt
+
             x = torch.empty((1, 4 if is_rgb else 2, trt_height, trt_width), dtype=torch.half if fp16 else torch.float, device=device)
             model_trt = torch2trt(model, [x], fp16_mode=fp16)
             torch.save(model_trt.state_dict(), trt_model_path)
@@ -214,14 +219,15 @@ def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, mod
             output_end_y = input_end_y
 
             # output tile area without padding
-            output_start_x_tile = (input_start_x - input_start_x_pad)
+            output_start_x_tile = input_start_x - input_start_x_pad
             output_end_x_tile = output_start_x_tile + input_tile_width
-            output_start_y_tile = (input_start_y - input_start_y_pad)
+            output_start_y_tile = input_start_y - input_start_y_pad
             output_end_y_tile = output_start_y_tile + input_tile_height
 
             # put tile into output image
-            output[:, :, output_start_y:output_end_y, output_start_x:output_end_x] = \
-                output_tile[:, :, output_start_y_tile:output_end_y_tile, output_start_x_tile:output_end_x_tile]
+            output[:, :, output_start_y:output_end_y, output_start_x:output_end_x] = output_tile[
+                :, :, output_start_y_tile:output_end_y_tile, output_start_x_tile:output_end_x_tile
+            ]
 
     return output
 
