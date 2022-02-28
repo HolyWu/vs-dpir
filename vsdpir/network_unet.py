@@ -1,7 +1,5 @@
-import torch
 import torch.nn as nn
 import vsdpir.basicblock as B
-import numpy as np
 
 '''
 # ====================

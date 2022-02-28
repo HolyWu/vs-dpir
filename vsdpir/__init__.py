@@ -1,12 +1,12 @@
 import math
-import os
+import os.path as osp
 from typing import Optional
 
 import numpy as np
 import torch
 import vapoursynth as vs
 
-dirname = os.path.dirname(__file__)
+dir_name = osp.dirname(__file__)
 
 
 def DPIR(
@@ -17,7 +17,7 @@ def DPIR(
     tile_y: int = 0,
     tile_pad: int = 0,
     device_type: str = 'cuda',
-    device_index: int = 0,
+    device_index: Optional[int] = None,
     fp16: bool = False,
     trt: bool = False,
     save_trt_model: bool = False,
@@ -51,10 +51,10 @@ def DPIR(
             Keep in mind that models are not portable across platforms or TensorRT versions and are specific to the exact GPU model they were built on.
     '''
     if not isinstance(clip, vs.VideoNode):
-        raise vs.Error('DPIR: This is not a clip')
+        raise vs.Error('DPIR: this is not a clip')
 
     if clip.format.id not in [vs.RGBS, vs.GRAYS]:
-        raise vs.Error('DPIR: Only RGBS and GRAYS formats are supported')
+        raise vs.Error('DPIR: only RGBS and GRAYS formats are supported')
 
     if strength is not None and strength <= 0:
         raise vs.Error('DPIR: strength must be greater than 0')
@@ -77,11 +77,11 @@ def DPIR(
     if (trt or save_trt_model) and device_type == 'cpu':
         raise vs.Error('DPIR: TensorRT is not supported for CPU device')
 
-    if os.path.getsize(os.path.join(dirname, 'drunet_color.pth')) == 0:
+    if osp.getsize(osp.join(dir_name, 'drunet_color.pth')) == 0:
         raise vs.Error("DPIR: model files have not been downloaded. run 'python -m vsdpir' first")
 
     is_rgb = clip.format.color_family == vs.RGB
-    c_g = 'color' if is_rgb else 'gray'
+    color_or_gray = 'color' if is_rgb else 'gray'
 
     if tile_x > 0 and tile_y > 0:
         trt_width = (min(tile_x + tile_pad, clip.width) + 7) & ~7
@@ -96,21 +96,21 @@ def DPIR(
         torch.backends.cudnn.benchmark = True
 
     if task == 'deblock':
-        trt_model_name = f'drunet_deblocking_{c_g}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
-        model_name = trt_model_name if trt else f'drunet_deblocking_{c_g}.pth'
+        trt_model_name = f'drunet_deblocking_{color_or_gray}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
+        model_name = trt_model_name if trt else f'drunet_deblocking_{color_or_gray}.pth'
         if strength is None:
             strength = 50.0
         strength /= 100
         clip = clip.std.Limiter()
     else:
-        trt_model_name = f'drunet_{c_g}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
-        model_name = trt_model_name if trt else f'drunet_{c_g}.pth'
+        trt_model_name = f'drunet_{color_or_gray}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
+        model_name = trt_model_name if trt else f'drunet_{color_or_gray}.pth'
         if strength is None:
             strength = 5.0
         strength /= 255
 
-    model_path = os.path.join(dirname, model_name)
-    trt_model_path = os.path.join(dirname, trt_model_name)
+    model_path = osp.join(dir_name, model_name)
+    trt_model_path = osp.join(dir_name, trt_model_name)
 
     if trt:
         from torch2trt import TRTModule
@@ -131,7 +131,7 @@ def DPIR(
         with torch.inference_mode():
             from torch2trt import torch2trt
 
-            x = torch.empty((1, 4 if is_rgb else 2, trt_height, trt_width), dtype=torch.half if fp16 else torch.float, device=device)
+            x = torch.ones((1, 4 if is_rgb else 2, trt_height, trt_width), dtype=torch.half if fp16 else torch.float, device=device)
             model_trt = torch2trt(model, [x], fp16_mode=fp16)
             torch.save(model_trt.state_dict(), trt_model_path)
             vs.core.log_message(1, f"'{trt_model_path}' saved successfully")
@@ -141,20 +141,20 @@ def DPIR(
 
     @torch.inference_mode()
     def dpir(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
-        img_L = frame_to_tensor(f)
-        img_L = torch.cat((img_L, noise_level_map), dim=1)
-        img_L = img_L.to(device)
+        img = frame_to_tensor(f)
+        img = torch.cat((img, noise_level_map), dim=1)
+        img = img.to(device)
         if fp16:
-            img_L = img_L.half()
+            img = img.half()
 
         if tile_x > 0 and tile_y > 0:
-            img_E = tile_process(img_L, tile_x, tile_y, tile_pad, model)
-        elif img_L.size(2) % 8 == 0 and img_L.size(3) % 8 == 0:
-            img_E = model(img_L)
+            img = tile_process(img, tile_x, tile_y, tile_pad, model)
+        elif img.size(2) % 8 == 0 and img.size(3) % 8 == 0:
+            img = model(img)
         else:
-            img_E = mod_pad(img_L, 8, model)
+            img = mod_pad(img, 8, model)
 
-        return tensor_to_frame(img_E, f.copy())
+        return tensor_to_frame(img, f.copy())
 
     return clip.std.ModifyFrame(clips=clip, selector=dpir)
 
@@ -233,7 +233,7 @@ def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, mod
 
 
 def mod_pad(img: torch.Tensor, modulo: int, model: torch.nn.Module) -> torch.Tensor:
-    from torch.nn import functional as F
+    import torch.nn.functional as F
 
     mod_pad_h, mod_pad_w = 0, 0
     h, w = img.shape[2:]
