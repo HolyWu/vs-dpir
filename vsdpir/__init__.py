@@ -13,8 +13,8 @@ def DPIR(
     clip: vs.VideoNode,
     strength: Optional[float] = None,
     task: str = 'denoise',
-    tile_x: int = 0,
-    tile_y: int = 0,
+    tile_w: int = 0,
+    tile_h: int = 0,
     tile_pad: int = 0,
     device_type: str = 'cuda',
     device_index: Optional[int] = None,
@@ -32,7 +32,7 @@ def DPIR(
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
 
-        tile_x, tile_y: Tile width and height respectively, 0 for no tiling.
+        tile_w, tile_h: Tile width and height respectively, 0 for no tiling.
             It's recommended that the input's width and height is divisible by the tile's width and height respectively.
             Set it to the maximum value that your GPU supports to reduce its impact on the output.
 
@@ -83,9 +83,9 @@ def DPIR(
     is_rgb = clip.format.color_family == vs.RGB
     color_or_gray = 'color' if is_rgb else 'gray'
 
-    if tile_x > 0 and tile_y > 0:
-        trt_width = (min(tile_x + tile_pad, clip.width) + 7) & ~7
-        trt_height = (min(tile_y + tile_pad, clip.height) + 7) & ~7
+    if tile_w > 0 and tile_h > 0:
+        trt_width = (min(tile_w + tile_pad, clip.width) + 7) & ~7
+        trt_height = (min(tile_h + tile_pad, clip.height) + 7) & ~7
     else:
         trt_width = (clip.width + 7) & ~7
         trt_height = (clip.height + 7) & ~7
@@ -147,8 +147,8 @@ def DPIR(
         if fp16:
             img = img.half()
 
-        if tile_x > 0 and tile_y > 0:
-            img = tile_process(img, tile_x, tile_y, tile_pad, model)
+        if tile_w > 0 and tile_h > 0:
+            img = tile_process(img, tile_w, tile_h, tile_pad, model)
         elif img.size(2) % 8 == 0 and img.size(3) % 8 == 0:
             img = model(img)
         else:
@@ -171,28 +171,28 @@ def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
     return f
 
 
-def tile_process(img: torch.Tensor, tile_x: int, tile_y: int, tile_pad: int, model: torch.nn.Module) -> torch.Tensor:
+def tile_process(img: torch.Tensor, tile_w: int, tile_h: int, tile_pad: int, model: torch.nn.Module) -> torch.Tensor:
     batch, channel, height, width = img.shape
     output_shape = (batch, channel - 1, height, width)
 
     # start with black image
     output = img.new_zeros(output_shape)
 
-    tiles_x = math.ceil(width / tile_x)
-    tiles_y = math.ceil(height / tile_y)
+    tiles_x = math.ceil(width / tile_w)
+    tiles_y = math.ceil(height / tile_h)
 
     # loop over all tiles
     for y in range(tiles_y):
         for x in range(tiles_x):
             # extract tile from input image
-            ofs_x = x * tile_x
-            ofs_y = y * tile_y
+            ofs_x = x * tile_w
+            ofs_y = y * tile_h
 
             # input tile area on total image
             input_start_x = ofs_x
-            input_end_x = min(ofs_x + tile_x, width)
+            input_end_x = min(ofs_x + tile_w, width)
             input_start_y = ofs_y
-            input_end_y = min(ofs_y + tile_y, height)
+            input_end_y = min(ofs_y + tile_h, height)
 
             # input tile area on total image with padding
             input_start_x_pad = max(input_start_x - tile_pad, 0)
