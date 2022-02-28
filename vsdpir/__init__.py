@@ -15,7 +15,7 @@ def DPIR(
     task: str = 'denoise',
     tile_w: int = 0,
     tile_h: int = 0,
-    tile_pad: int = 0,
+    tile_pad: int = 8,
     device_type: str = 'cuda',
     device_index: Optional[int] = None,
     fp16: bool = False,
