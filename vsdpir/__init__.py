@@ -26,25 +26,25 @@ def DPIR(
     DPIR: Deep Plug-and-Play Image Restoration
 
     Parameters:
-        clip: Clip to process. Only RGB and Gray formats with float sample type of 32 bit depth are supported.
+        clip: Clip to process. Only RGB and GRAY formats with float sample type of 32 bit depth are supported.
 
         strength: Strength for deblocking or denoising. Must be greater than 0. Defaults to 50.0 for 'deblock' task, 5.0 for 'denoise' task.
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
 
-        tile_w, tile_h: Tile width and height respectively, 0 for no tiling.
-            It's recommended that the input's width and height is divisible by the tile's width and height respectively.
-            Set it to the maximum value that your GPU supports to reduce its impact on the output.
+        tile_w, tile_h: Tile width and height, respectively. As too large images result in the out of GPU memory issue,
+            so this tile option will first crop input images into tiles, and then process each of them.
+            Finally, they will be merged into one image. 0 denotes for do not use tile.
 
-        tile_pad: Tile padding.
+        tile_pad: The pad size for each tile, to remove border artifacts.
 
         device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
 
         device_index: Device ordinal for the device type.
 
-        fp16: fp16 mode for faster and more lightweight inference on cards with Tensor Cores.
+        fp16: Whether to use FP16 precision during inference.
 
-        trt: Use TensorRT model to accelerate inference.
+        trt: Use TensorRT model to accelerate inferencing.
 
         save_trt_model: Save the converted TensorRT model and does no inference. One-frame evaluation is enough.
             Each model can only work with a specific dimension, hence you must save the model first for dimensions which have not been converted.
