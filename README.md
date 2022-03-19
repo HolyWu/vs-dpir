@@ -4,10 +4,11 @@ DPIR function for VapourSynth, based on https://github.com/cszn/DPIR.
 
 ## Dependencies
 - [NumPy](https://numpy.org/install)
-- [PyTorch](https://pytorch.org/get-started), preferably with CUDA. Note that `torchaudio` is not required and hence can be omitted from the command.
+- [ONNX Runtime](https://onnxruntime.ai/). Note that only one of `onnxruntime`, `onnxruntime-gpu` and `onnxruntime-directml` should be installed at a time in any one environment.
 - [VapourSynth](http://www.vapoursynth.com/)
-- (Optional) [TensorRT](https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html). Note that `uff` and `PyCUDA` are not required and hence can be skipped from the guide.
-- (Optional) [torch2trt](https://nvidia-ai-iot.github.io/torch2trt/master/getting_started.html#install-without-plugins)
+- (Optional) [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
+- (Optional) [cuDNN](https://developer.nvidia.com/cudnn)
+- (Optional) [TensorRT](https://developer.nvidia.com/tensorrt)
 
 
 ## Installation

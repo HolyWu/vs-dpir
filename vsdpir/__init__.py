@@ -3,8 +3,9 @@ import os.path as osp
 from typing import Optional
 
 import numpy as np
-import torch
+import onnxruntime as ort
 import vapoursynth as vs
+from vsutil import fallback
 
 dir_name = osp.dirname(__file__)
 
@@ -16,11 +17,12 @@ def DPIR(
     tile_w: int = 0,
     tile_h: int = 0,
     tile_pad: int = 8,
-    device_type: str = 'cuda',
-    device_index: Optional[int] = None,
-    fp16: bool = False,
-    trt: bool = False,
-    save_trt_model: bool = False,
+    provider: int = 1,
+    device_id: int = 0,
+    trt_fp16: bool = False,
+    trt_engine_cache: bool = True,
+    trt_engine_cache_path: str = dir_name,
+    log_level: int = 2,
 ) -> vs.VideoNode:
     '''
     DPIR: Deep Plug-and-Play Image Restoration
@@ -32,23 +34,44 @@ def DPIR(
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
 
-        tile_w, tile_h: Tile width and height, respectively. As too large images result in the out of GPU memory issue,
-            so this tile option will first crop input images into tiles, and then process each of them.
-            Finally, they will be merged into one image. 0 denotes for do not use tile.
+        tile_w, tile_h: Tile width and height, respectively. As too large images result in the out of GPU memory issue, so this tile option will first crop
+            input images into tiles, and then process each of them. Finally, they will be merged into one image. 0 denotes for do not use tile.
 
         tile_pad: The pad size for each tile, to remove border artifacts.
 
-        device_type: Device type on which the tensor is allocated. Must be 'cuda' or 'cpu'.
+        provider: The hardware platform to execute on.
+            0 = Default CPU
+            1 = NVIDIA CUDA (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements)
+            2 = NVIDIA TensorRT (https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html#requirements)
+            3 = DirectML (https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html#requirements)
 
-        device_index: Device ordinal for the device type.
+        device_id: The device ID.
 
-        fp16: Whether to use FP16 precision during inference.
+        trt_fp16: Enable FP16 mode in TensorRT.
 
-        trt: Use TensorRT model to accelerate inferencing.
+        trt_engine_cache: Enable TensorRT engine caching. The purpose of using engine caching is to save engine build time in the case that TensorRT may take
+            long time to optimize and build engine. Engine will be cached when it's built for the first time so next time when new inference session is created
+            the engine can be loaded directly from cache. In order to validate that the loaded engine is usable for current inference, engine profile is also
+            cached and loaded along with engine. If current input shapes are in the range of the engine profile, the loaded engine can be safely used. Otherwise
+            if input shapes are out of range, profile cache will be updated to cover the new shape and engine will be recreated based on the new profile (and
+            also refreshed in the engine cache). Note each engine is created for specific settings such as model path/name, precision, workspace, profiles etc,
+            and specific GPUs and it's not portable, so it's essential to make sure those settings are not changing, otherwise the engine needs to be rebuilt
+            and cached again.
 
-        save_trt_model: Save the converted TensorRT model and does no inference. One-frame evaluation is enough.
-            Each model can only work with a specific dimension, hence you must save the model first for dimensions which have not been converted.
-            Keep in mind that models are not portable across platforms or TensorRT versions and are specific to the exact GPU model they were built on.
+            Warning: Please clean up any old engine and profile cache files (.engine and .profile) if any of the following changes:
+                Model changes (if there are any changes to the model topology, opset version, operators etc.)
+                ORT version changes (i.e. moving from ORT version 1.8 to 1.9)
+                TensorRT version changes (i.e. moving from TensorRT 7.0 to 8.0)
+                Hardware changes (Engine and profile files are not portable and optimized for specific NVIDIA hardware)
+
+        trt_engine_cache_path: Specify path for TensorRT engine and profile files if trt_engine_cache is true.
+
+        log_level: Log severity level. Applies to session load, initialization, etc.
+            0 = Verbose
+            1 = Info
+            2 = Warning
+            3 = Error
+            4 = Fatal
     '''
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: this is not a clip')
@@ -60,123 +83,84 @@ def DPIR(
         raise vs.Error('DPIR: strength must be greater than 0')
 
     task = task.lower()
-    device_type = device_type.lower()
 
     if task not in ['deblock', 'denoise']:
         raise vs.Error("DPIR: task must be 'deblock' or 'denoise'")
 
-    if device_type not in ['cuda', 'cpu']:
-        raise vs.Error("DPIR: device_type must be 'cuda' or 'cpu'")
-
-    if device_type == 'cuda' and not torch.cuda.is_available():
-        raise vs.Error('DPIR: CUDA is not available')
-
-    if trt and save_trt_model:
-        raise vs.Error('DPIR: both trt and save_trt_model cannot be True at the same time')
-
-    if (trt or save_trt_model) and device_type == 'cpu':
-        raise vs.Error('DPIR: TensorRT is not supported for CPU device')
-
-    if osp.getsize(osp.join(dir_name, 'drunet_color.pth')) == 0:
+    if osp.getsize(osp.join(dir_name, 'drunet_color.onnx')) == 0:
         raise vs.Error("DPIR: model files have not been downloaded. run 'python -m vsdpir' first")
 
-    is_rgb = clip.format.color_family == vs.RGB
-    color_or_gray = 'color' if is_rgb else 'gray'
-
-    if tile_w > 0 and tile_h > 0:
-        trt_width = (min(tile_w + tile_pad, clip.width) + 7) & ~7
-        trt_height = (min(tile_h + tile_pad, clip.height) + 7) & ~7
-    else:
-        trt_width = (clip.width + 7) & ~7
-        trt_height = (clip.height + 7) & ~7
-
-    device = torch.device(device_type, device_index)
-    if device_type == 'cuda':
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
+    color_or_gray = 'color' if clip.format.color_family == vs.RGB else 'gray'
 
     if task == 'deblock':
-        trt_model_name = f'drunet_deblocking_{color_or_gray}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
-        model_name = trt_model_name if trt else f'drunet_deblocking_{color_or_gray}.pth'
-        if strength is None:
-            strength = 50.0
-        strength /= 100
+        strength = fallback(strength, 50.0) / 100
+        model_name = f'drunet_deblocking_{color_or_gray}.onnx'
         clip = clip.std.Limiter()
     else:
-        trt_model_name = f'drunet_{color_or_gray}_trt_{trt_width}x{trt_height}{"_fp16" if fp16 else ""}.pth'
-        model_name = trt_model_name if trt else f'drunet_{color_or_gray}.pth'
-        if strength is None:
-            strength = 5.0
-        strength /= 255
+        strength = fallback(strength, 5.0) / 255
+        model_name = f'drunet_{color_or_gray}.onnx'
 
     model_path = osp.join(dir_name, model_name)
-    trt_model_path = osp.join(dir_name, trt_model_name)
 
-    if trt:
-        from torch2trt import TRTModule
+    sess_options = ort.SessionOptions()
+    sess_options.log_severity_level = log_level
 
-        model = TRTModule()
+    cuda_ep = ('CUDAExecutionProvider', dict(device_id=device_id))
+
+    if provider <= 0:
+        providers = ['CPUExecutionProvider']
+    elif provider == 1:
+        providers = [cuda_ep]
+    elif provider == 2:
+        providers = [
+            (
+                'TensorrtExecutionProvider',
+                dict(device_id=device_id, trt_fp16_enable=trt_fp16, trt_engine_cache_enable=trt_engine_cache, trt_engine_cache_path=trt_engine_cache_path),
+            ),
+            cuda_ep,
+        ]
     else:
-        from .network_unet import UNetRes
+        sess_options.enable_mem_pattern = False
+        providers = [('DmlExecutionProvider', dict(device_id=device_id))]
 
-        model = UNetRes(in_nc=4 if is_rgb else 2, out_nc=3 if is_rgb else 1)
+    session = ort.InferenceSession(model_path, sess_options, providers)
 
-    model.load_state_dict(torch.load(model_path), strict=True)
-    model.eval()
-    model.to(device)
-    if fp16:
-        model.half()
+    noise_level_map = np.full((1, 1, clip.height, clip.width), strength, dtype=np.float32)
 
-    if save_trt_model:
-        with torch.inference_mode():
-            from torch2trt import torch2trt
-
-            x = torch.ones((1, 4 if is_rgb else 2, trt_height, trt_width), dtype=torch.half if fp16 else torch.float, device=device)
-            model_trt = torch2trt(model, [x], fp16_mode=fp16)
-            torch.save(model_trt.state_dict(), trt_model_path)
-            vs.core.log_message(1, f"'{trt_model_path}' saved successfully")
-            return clip
-
-    noise_level_map = torch.FloatTensor([strength]).repeat(1, 1, clip.height, clip.width)
-
-    @torch.inference_mode()
     def dpir(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
-        img = frame_to_tensor(f)
-        img = torch.cat((img, noise_level_map), dim=1)
-        img = img.to(device)
-        if fp16:
-            img = img.half()
+        img = frame_to_ndarray(f)
+        img = np.concatenate((img, noise_level_map), axis=1)
 
         if tile_w > 0 and tile_h > 0:
-            img = tile_process(img, tile_w, tile_h, tile_pad, model)
-        elif img.size(2) % 8 == 0 and img.size(3) % 8 == 0:
-            img = model(img)
+            output = tile_process(img, tile_w, tile_h, tile_pad, session)
+        elif img.shape[2] % 8 == 0 and img.shape[3] % 8 == 0:
+            output = session.run(None, {'input': img})[0]
         else:
-            img = mod_pad(img, 8, model)
+            output = mod_pad(img, 8, session)
 
-        return tensor_to_frame(img, f.copy())
+        return ndarray_to_frame(output, f.copy())
 
     return clip.std.ModifyFrame(clips=clip, selector=dpir)
 
 
-def frame_to_tensor(f: vs.VideoFrame) -> torch.Tensor:
-    arr = np.stack([np.asarray(f[plane]) for plane in range(f.format.num_planes)])
-    return torch.from_numpy(arr).unsqueeze(0)
+def frame_to_ndarray(frame: vs.VideoFrame) -> np.ndarray:
+    array = np.stack([np.asarray(frame[plane]) for plane in range(frame.format.num_planes)])
+    return np.expand_dims(array, axis=0)
 
 
-def tensor_to_frame(t: torch.Tensor, f: vs.VideoFrame) -> vs.VideoFrame:
-    arr = t.squeeze(0).detach().cpu().numpy()
-    for plane in range(f.format.num_planes):
-        np.copyto(np.asarray(f[plane]), arr[plane, :, :])
-    return f
+def ndarray_to_frame(array: np.ndarray, frame: vs.VideoFrame) -> vs.VideoFrame:
+    array = np.squeeze(array, axis=0)
+    for plane in range(frame.format.num_planes):
+        np.copyto(np.asarray(frame[plane]), array[plane, :, :])
+    return frame
 
 
-def tile_process(img: torch.Tensor, tile_w: int, tile_h: int, tile_pad: int, model: torch.nn.Module) -> torch.Tensor:
+def tile_process(img: np.ndarray, tile_w: int, tile_h: int, tile_pad: int, session: ort.InferenceSession) -> np.ndarray:
     batch, channel, height, width = img.shape
     output_shape = (batch, channel - 1, height, width)
 
     # start with black image
-    output = img.new_zeros(output_shape)
+    output = np.zeros_like(img, shape=output_shape)
 
     tiles_x = math.ceil(width / tile_w)
     tiles_y = math.ceil(height / tile_h)
@@ -207,10 +191,10 @@ def tile_process(img: torch.Tensor, tile_w: int, tile_h: int, tile_pad: int, mod
             input_tile = img[:, :, input_start_y_pad:input_end_y_pad, input_start_x_pad:input_end_x_pad]
 
             # process tile
-            if input_tile.size(2) % 8 == 0 and input_tile.size(3) % 8 == 0:
-                output_tile = model(input_tile)
+            if input_tile.shape[2] % 8 == 0 and input_tile.shape[3] % 8 == 0:
+                output_tile = session.run(None, {'input': input_tile})[0]
             else:
-                output_tile = mod_pad(input_tile, 8, model)
+                output_tile = mod_pad(input_tile, 8, session)
 
             # output tile area on total image
             output_start_x = input_start_x
@@ -232,9 +216,7 @@ def tile_process(img: torch.Tensor, tile_w: int, tile_h: int, tile_pad: int, mod
     return output
 
 
-def mod_pad(img: torch.Tensor, modulo: int, model: torch.nn.Module) -> torch.Tensor:
-    import torch.nn.functional as F
-
+def mod_pad(img: np.ndarray, modulo: int, session: ort.InferenceSession) -> np.ndarray:
     mod_pad_h, mod_pad_w = 0, 0
     h, w = img.shape[2:]
 
@@ -244,6 +226,6 @@ def mod_pad(img: torch.Tensor, modulo: int, model: torch.nn.Module) -> torch.Ten
     if w % modulo != 0:
         mod_pad_w = modulo - w % modulo
 
-    img = F.pad(img, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
-    output = model(img)
+    img = np.pad(img, ((0, 0), (0, 0), (0, mod_pad_h), (0, mod_pad_w)), 'reflect')
+    output = session.run(None, {'input': img})[0]
     return output[:, :, :h, :w]

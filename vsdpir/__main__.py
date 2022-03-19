@@ -15,7 +15,7 @@ def download_model(url: str) -> None:
 
 
 if __name__ == '__main__':
-    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_color.pth')
-    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_deblocking_color.pth')
-    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_deblocking_gray.pth')
-    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_gray.pth')
+    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_color.onnx')
+    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_deblocking_color.onnx')
+    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_deblocking_gray.onnx')
+    download_model('https://github.com/HolyWu/vs-dpir/releases/download/model/drunet_gray.onnx')
