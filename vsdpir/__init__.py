@@ -44,6 +44,7 @@ def DPIR(
             1 = NVIDIA CUDA (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements)
             2 = NVIDIA TensorRT (https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html#requirements)
             3 = DirectML (https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html#requirements)
+            4 = AMD MIGraphX (https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html)
 
         device_id: The device ID.
 
@@ -119,9 +120,11 @@ def DPIR(
             ),
             cuda_ep,
         ]
-    else:
+    elif provider == 3:
         sess_options.enable_mem_pattern = False
         providers = [('DmlExecutionProvider', dict(device_id=device_id))]
+    else:
+        providers = [('MIGraphXExecutionProvider', dict(device_id=device_id))]
 
     session = ort.InferenceSession(model_path, sess_options, providers)
 
