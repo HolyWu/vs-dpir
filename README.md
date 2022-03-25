@@ -1,5 +1,5 @@
 # DPIR
-DPIR function for VapourSynth, based on https://github.com/cszn/DPIR.
+Plug-and-Play Image Restoration with Deep Denoiser Prior, based on https://github.com/cszn/DPIR.
 
 
 ## Dependencies
