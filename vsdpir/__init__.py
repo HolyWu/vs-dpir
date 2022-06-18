@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import math
 import os.path as osp
-from typing import Optional
 
 import numpy as np
 import onnxruntime as ort
@@ -12,7 +13,7 @@ dir_name = osp.dirname(__file__)
 
 def DPIR(
     clip: vs.VideoNode,
-    strength: Optional[float] = None,
+    strength: float | vs.VideoNode | None = None,
     task: str = 'denoise',
     tile_w: int = 0,
     tile_h: int = 0,
@@ -31,7 +32,8 @@ def DPIR(
     Parameters:
         clip: Clip to process. Only RGB and GRAY formats with float sample type of 32 bit depth are supported.
 
-        strength: Strength for deblocking or denoising. Must be greater than 0. Defaults to 50.0 for 'deblock' task, 5.0 for 'denoise' task.
+        strength: Strength for deblocking/denoising. Defaults to 50.0 for 'deblock', 5.0 for 'denoise'.
+            Also accepts a GRAYS clip for varying strength (with normalization factor 1.0/100.0 for 'deblock' and 1.0/255.0 for 'denoise', respectively)
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
 
@@ -83,8 +85,12 @@ def DPIR(
     if clip.format.id not in [vs.RGBS, vs.GRAYS]:
         raise vs.Error('DPIR: only RGBS and GRAYS formats are supported')
 
-    if strength is not None and strength <= 0:
-        raise vs.Error('DPIR: strength must be greater than 0')
+    if isinstance(strength, vs.VideoNode):
+        if strength.format.id != vs.GRAYS:
+            raise vs.Error('DPIR: strength must be of GRAYS format')
+
+        if strength.width != clip.width or strength.height != clip.height or strength.num_frames != clip.num_frames:
+            raise vs.Error('DPIR: strength must have the same dimensions and number of frames as main clip')
 
     task = task.lower()
 
@@ -97,11 +103,13 @@ def DPIR(
     color_or_gray = 'color' if clip.format.color_family == vs.RGB else 'gray'
 
     if task == 'deblock':
-        strength = fallback(strength, 50.0) / 100
+        if not isinstance(strength, vs.VideoNode):
+            strength = fallback(strength, 50.0) / 100
         model_name = f'drunet_deblocking_{color_or_gray}.onnx'
         clip = clip.std.Limiter()
     else:
-        strength = fallback(strength, 5.0) / 255
+        if not isinstance(strength, vs.VideoNode):
+            strength = fallback(strength, 5.0) / 255
         model_name = f'drunet_{color_or_gray}.onnx'
 
     model_path = osp.join(dir_name, model_name)
@@ -137,10 +145,11 @@ def DPIR(
 
     session = ort.InferenceSession(model_path, sess_options, providers)
 
-    noise_level_map = np.full((1, 1, clip.height, clip.width), strength, dtype=np.float32)
+    noise_level = strength if isinstance(strength, vs.VideoNode) else clip.std.BlankClip(format=vs.GRAYS, color=strength)
 
     def dpir(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
-        img = frame_to_ndarray(f)
+        img = frame_to_ndarray(f[0])
+        noise_level_map = frame_to_ndarray(f[1])
         img = np.concatenate((img, noise_level_map), axis=1)
 
         if tile_w > 0 and tile_h > 0:
@@ -150,9 +159,9 @@ def DPIR(
         else:
             output = mod_pad(img, 8, session)
 
-        return ndarray_to_frame(output, f.copy())
+        return ndarray_to_frame(output, f[0].copy())
 
-    return clip.std.ModifyFrame(clips=clip, selector=dpir)
+    return clip.std.ModifyFrame(clips=[clip, noise_level], selector=dpir)
 
 
 def frame_to_ndarray(frame: vs.VideoFrame) -> np.ndarray:
