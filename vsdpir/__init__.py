@@ -26,7 +26,7 @@ def DPIR(
     trt_engine_cache_path: str = dir_name,
     log_level: int = 2,
 ) -> vs.VideoNode:
-    '''
+    """
     DPIR: Deep Plug-and-Play Image Restoration
 
     Parameters:
@@ -78,7 +78,7 @@ def DPIR(
             2 = Warning
             3 = Error
             4 = Fatal
-    '''
+    """
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: this is not a clip')
 
