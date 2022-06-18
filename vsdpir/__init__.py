@@ -19,6 +19,7 @@ def DPIR(
     tile_pad: int = 8,
     provider: int = 1,
     device_id: int = 0,
+    trt_max_workspace_size: int = 1073741824,
     trt_fp16: bool = False,
     trt_engine_cache: bool = True,
     trt_engine_cache_path: str = dir_name,
@@ -47,6 +48,8 @@ def DPIR(
             4 = AMD MIGraphX (https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html)
 
         device_id: The device ID.
+
+        trt_max_workspace_size: Maximum workspace size for TensorRT engine.
 
         trt_fp16: Enable FP16 mode in TensorRT.
 
@@ -116,7 +119,13 @@ def DPIR(
         providers = [
             (
                 'TensorrtExecutionProvider',
-                dict(device_id=device_id, trt_fp16_enable=trt_fp16, trt_engine_cache_enable=trt_engine_cache, trt_engine_cache_path=trt_engine_cache_path),
+                dict(
+                    device_id=device_id,
+                    trt_max_workspace_size=trt_max_workspace_size,
+                    trt_fp16_enable=trt_fp16,
+                    trt_engine_cache_enable=trt_engine_cache,
+                    trt_engine_cache_path=trt_engine_cache_path,
+                ),
             ),
             cuda_ep,
         ]
