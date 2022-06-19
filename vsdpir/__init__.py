@@ -32,8 +32,7 @@ def DPIR(
     Parameters:
         clip: Clip to process. Only RGB and GRAY formats with float sample type of 32 bit depth are supported.
 
-        strength: Strength for deblocking/denoising. Defaults to 50.0 for 'deblock', 5.0 for 'denoise'.
-            Also accepts a GRAY8/GRAYS clip for varying strength (with normalization factor 1.0/100.0 for 'deblock' and 1.0/255.0 for 'denoise', respectively)
+        strength: Strength for deblocking/denoising. Defaults to 50.0 for 'deblock', 5.0 for 'denoise'. Also accepts a GRAY8/GRAYS clip for varying strength.
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
 
