@@ -103,13 +103,11 @@ def DPIR(
     color_or_gray = 'color' if clip.format.color_family == vs.RGB else 'gray'
 
     if task == 'deblock':
-        if not isinstance(strength, vs.VideoNode):
-            strength = fallback(strength, 50.0) / 100
+        strength = strength.std.Expr(expr='x 100 /') if isinstance(strength, vs.VideoNode) else fallback(strength, 50.0) / 100
         model_name = f'drunet_deblocking_{color_or_gray}.onnx'
         clip = clip.std.Limiter()
     else:
-        if not isinstance(strength, vs.VideoNode):
-            strength = fallback(strength, 5.0) / 255
+        strength = strength.std.Expr(expr='x 255 /') if isinstance(strength, vs.VideoNode) else fallback(strength, 5.0) / 255
         model_name = f'drunet_{color_or_gray}.onnx'
 
     model_path = osp.join(dir_name, model_name)
