@@ -33,7 +33,7 @@ def DPIR(
         clip: Clip to process. Only RGB and GRAY formats with float sample type of 32 bit depth are supported.
 
         strength: Strength for deblocking/denoising. Defaults to 50.0 for 'deblock', 5.0 for 'denoise'.
-            Also accepts a GRAYS clip for varying strength (with normalization factor 1.0/100.0 for 'deblock' and 1.0/255.0 for 'denoise', respectively)
+            Also accepts a GRAY8/GRAYS clip for varying strength (with normalization factor 1.0/100.0 for 'deblock' and 1.0/255.0 for 'denoise', respectively)
 
         task: Task to perform. Must be 'deblock' or 'denoise'.
 
@@ -86,8 +86,8 @@ def DPIR(
         raise vs.Error('DPIR: only RGBS and GRAYS formats are supported')
 
     if isinstance(strength, vs.VideoNode):
-        if strength.format.id != vs.GRAYS:
-            raise vs.Error('DPIR: strength must be of GRAYS format')
+        if strength.format.id not in [vs.GRAY8, vs.GRAYS]:
+            raise vs.Error('DPIR: strength must be of GRAY8/GRAYS format')
 
         if strength.width != clip.width or strength.height != clip.height or strength.num_frames != clip.num_frames:
             raise vs.Error('DPIR: strength must have the same dimensions and number of frames as main clip')
@@ -103,11 +103,11 @@ def DPIR(
     color_or_gray = 'color' if clip.format.color_family == vs.RGB else 'gray'
 
     if task == 'deblock':
-        strength = strength.std.Expr(expr='x 100 /') if isinstance(strength, vs.VideoNode) else fallback(strength, 50.0) / 100
+        strength = strength.std.Expr(expr='x 100 /', format=vs.GRAYS) if isinstance(strength, vs.VideoNode) else fallback(strength, 50.0) / 100
         model_name = f'drunet_deblocking_{color_or_gray}.onnx'
         clip = clip.std.Limiter()
     else:
-        strength = strength.std.Expr(expr='x 255 /') if isinstance(strength, vs.VideoNode) else fallback(strength, 5.0) / 255
+        strength = strength.std.Expr(expr='x 255 /', format=vs.GRAYS) if isinstance(strength, vs.VideoNode) else fallback(strength, 5.0) / 255
         model_name = f'drunet_{color_or_gray}.onnx'
 
     model_path = osp.join(dir_name, model_name)
