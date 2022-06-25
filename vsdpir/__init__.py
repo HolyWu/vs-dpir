@@ -25,6 +25,7 @@ def DPIR(
     trt_engine_cache: bool = True,
     trt_engine_cache_path: str = dir_name,
     log_level: int = 2,
+    dual: bool = False,
 ) -> vs.VideoNode:
     """
     DPIR: Deep Plug-and-Play Image Restoration
@@ -77,6 +78,8 @@ def DPIR(
             2 = Warning
             3 = Error
             4 = Fatal
+
+        dual: Perform inference in two threads for better performance. Mostly useful for TensorRT, not so useful for CUDA, and not supported for DirectML.
     """
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('DPIR: this is not a clip')
@@ -96,17 +99,29 @@ def DPIR(
     if task not in ['deblock', 'denoise']:
         raise vs.Error("DPIR: task must be 'deblock' or 'denoise'")
 
+    if dual and provider == 3:
+        raise vs.Error('DPIR: dual is not supported for DirectML')
+
     if osp.getsize(osp.join(dir_name, 'drunet_color.onnx')) == 0:
         raise vs.Error("DPIR: model files have not been downloaded. run 'python -m vsdpir' first")
 
     color_or_gray = 'color' if clip.format.color_family == vs.RGB else 'gray'
 
+    if clip.num_frames < 2:
+        dual = False
+
     if task == 'deblock':
-        strength = strength.std.Expr(expr='x 100 /', format=vs.GRAYS) if isinstance(strength, vs.VideoNode) else fallback(strength, 50.0) / 100
+        if isinstance(strength, vs.VideoNode):
+            noise_level = strength.std.Expr(expr='x 100 /', format=vs.GRAYS)
+        else:
+            noise_level = clip.std.BlankClip(format=vs.GRAYS, color=fallback(strength, 50.0) / 100)
         model_name = f'drunet_deblocking_{color_or_gray}.onnx'
         clip = clip.std.Limiter()
     else:
-        strength = strength.std.Expr(expr='x 255 /', format=vs.GRAYS) if isinstance(strength, vs.VideoNode) else fallback(strength, 5.0) / 255
+        if isinstance(strength, vs.VideoNode):
+            noise_level = strength.std.Expr(expr='x 255 /', format=vs.GRAYS)
+        else:
+            noise_level = clip.std.BlankClip(format=vs.GRAYS, color=fallback(strength, 5.0) / 255)
         model_name = f'drunet_{color_or_gray}.onnx'
 
     model_path = osp.join(dir_name, model_name)
@@ -142,9 +157,7 @@ def DPIR(
 
     session = ort.InferenceSession(model_path, sess_options, providers)
 
-    noise_level = strength if isinstance(strength, vs.VideoNode) else clip.std.BlankClip(format=vs.GRAYS, color=strength)
-
-    def dpir(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
+    def dpir(n: int, f: list[vs.VideoFrame]) -> vs.VideoFrame:
         img = frame_to_ndarray(f[0])
         noise_level_map = frame_to_ndarray(f[1])
         img = np.concatenate((img, noise_level_map), axis=1)
@@ -152,12 +165,27 @@ def DPIR(
         if tile_w > 0 and tile_h > 0:
             output = tile_process(img, tile_w, tile_h, tile_pad, session)
         elif img.shape[2] % 8 == 0 and img.shape[3] % 8 == 0:
-            output = session.run(None, {'input': img})[0]
+            io_binding = session.io_binding()
+            io_binding.bind_cpu_input('input', img)
+            io_binding.bind_output('output')
+            session.run_with_iobinding(io_binding)
+            output = io_binding.copy_outputs_to_cpu()[0]
         else:
             output = mod_pad(img, 8, session)
 
         return ndarray_to_frame(output, f[0].copy())
 
+    if dual:
+        clip_even = clip[::2]
+        clip_odd = clip[1::2]
+        noise_level_even = noise_level[::2]
+        noise_level_odd = noise_level[1::2]
+        return vs.core.std.Interleave(
+            [
+                clip_even.std.ModifyFrame(clips=[clip_even, noise_level_even], selector=dpir),
+                clip_odd.std.ModifyFrame(clips=[clip_odd, noise_level_odd], selector=dpir),
+            ]
+        )
     return clip.std.ModifyFrame(clips=[clip, noise_level], selector=dpir)
 
 
@@ -210,7 +238,11 @@ def tile_process(img: np.ndarray, tile_w: int, tile_h: int, tile_pad: int, sessi
 
             # process tile
             if input_tile.shape[2] % 8 == 0 and input_tile.shape[3] % 8 == 0:
-                output_tile = session.run(None, {'input': input_tile})[0]
+                io_binding = session.io_binding()
+                io_binding.bind_cpu_input('input', input_tile)
+                io_binding.bind_output('output')
+                session.run_with_iobinding(io_binding)
+                output_tile = io_binding.copy_outputs_to_cpu()[0]
             else:
                 output_tile = mod_pad(input_tile, 8, session)
 
@@ -245,5 +277,9 @@ def mod_pad(img: np.ndarray, modulo: int, session: ort.InferenceSession) -> np.n
         mod_pad_w = modulo - w % modulo
 
     img = np.pad(img, ((0, 0), (0, 0), (0, mod_pad_h), (0, mod_pad_w)), 'reflect')
-    output = session.run(None, {'input': img})[0]
+    io_binding = session.io_binding()
+    io_binding.bind_cpu_input('input', img)
+    io_binding.bind_output('output')
+    session.run_with_iobinding(io_binding)
+    output = io_binding.copy_outputs_to_cpu()[0]
     return output[:, :, :h, :w]
