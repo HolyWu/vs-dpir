@@ -4,25 +4,29 @@ Plug-and-Play Image Restoration with Deep Denoiser Prior, based on https://githu
 
 ## Dependencies
 - [NumPy](https://numpy.org/install)
-- [ONNX Runtime](https://onnxruntime.ai/). CUDA and TensorRT require `onnxruntime-gpu`, while DirectML requires `onnxruntime-directml`. Note that only one of `onnxruntime`, `onnxruntime-gpu` and `onnxruntime-directml` should be installed at a time in any one environment.
-- [VapourSynth](http://www.vapoursynth.com/) R55 or newer.
-- (Optional) [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
-- (Optional) [cuDNN](https://developer.nvidia.com/cudnn)
-- (Optional) [TensorRT](https://developer.nvidia.com/tensorrt)
+- [PyTorch](https://pytorch.org/get-started) 1.13
+- [VapourSynth](http://www.vapoursynth.com/) R55+
+
+`trt` requires additional runtime libraries:
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) 11.7
+- [cuDNN](https://developer.nvidia.com/cudnn) 8.6
+- [TensorRT](https://developer.nvidia.com/tensorrt) 8.5.3.1
+
+For ease of installation on Windows, you can download the 7z file on [Releases](https://github.com/HolyWu/vs-dpir/releases) which contains required runtime libraries and Python wheel file. Either add the unzipped directory to your system `PATH` or copy the DLL files to a directory which is already in your system `PATH`. Finally pip install the Python wheel file.
 
 
 ## Installation
 ```
-pip install --upgrade vsdpir
+pip install -U vsdpir
 python -m vsdpir
 ```
 
 
 ## Usage
 ```python
-from vsdpir import DPIR
+from vsdpir import dpir
 
-ret = DPIR(clip)
+ret = dpir(clip)
 ```
 
 See `__init__.py` for the description of the parameters.
