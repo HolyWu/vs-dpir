@@ -1,3 +1,33 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vsdpir"
+version = "2.3.0"
+description = "DPIR function for VapourSynth"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "HolyWu", email = "holywu@gmail.com"}]
+keywords = ["DPIR", "VapourSynth"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Multimedia :: Video"
+]
+dependencies = [
+  "numpy",
+  "requests",
+  "tensorrt>=8.5.3.1",
+  "torch>=1.13.0",
+  "torch-tensorrt-fx-only>=1.3.0",
+  "tqdm",
+  "VapourSynth>=55",
+  "vsutil"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/HolyWu/vs-dpir"
+"Bug Tracker" = "https://github.com/HolyWu/vs-dpir/issues"
