@@ -42,7 +42,7 @@ class Backend:
 
 
 @torch.inference_mode()
-def DPIR(
+def dpir(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 1,
@@ -82,35 +82,35 @@ def DPIR(
     :param tile_pad:                Pad size for each tile, to remove border artifacts.
     """
     if not isinstance(clip, vs.VideoNode):
-        raise vs.Error("DPIR: this is not a clip")
+        raise vs.Error("dpir: this is not a clip")
 
     if clip.format.id not in [vs.RGBH, vs.RGBS, vs.GRAYH, vs.GRAYS]:
-        raise vs.Error("DPIR: only RGBH/RGBS/GRAYH/GRAYS formats are supported")
+        raise vs.Error("dpir: only RGBH/RGBS/GRAYH/GRAYS formats are supported")
 
     if not torch.cuda.is_available():
-        raise vs.Error("DPIR: CUDA is not available")
+        raise vs.Error("dpir: CUDA is not available")
 
     if num_streams < 1:
-        raise vs.Error("DPIR: num_streams must be at least 1")
+        raise vs.Error("dpir: num_streams must be at least 1")
 
     if num_streams > vs.core.num_threads:
-        raise vs.Error("DPIR: setting num_streams greater than `core.num_threads` is useless")
+        raise vs.Error("dpir: setting num_streams greater than `core.num_threads` is useless")
 
     if trt:
         if nvfuser:
-            raise vs.Error("DPIR: nvfuser and trt are mutually exclusive")
+            raise vs.Error("dpir: nvfuser and trt are mutually exclusive")
 
         if cuda_graphs:
-            raise vs.Error("DPIR: cuda_graphs and trt are mutually exclusive")
+            raise vs.Error("dpir: cuda_graphs and trt are mutually exclusive")
 
     task = task.lower()
 
     if task not in ["deblock", "denoise"]:
-        raise vs.Error("DPIR: task must be 'deblock' or 'denoise'")
+        raise vs.Error("dpir: task must be 'deblock' or 'denoise'")
 
     if isinstance(strength, vs.VideoNode):
         if strength.format.id not in [vs.GRAY8, vs.GRAYH, vs.GRAYS]:
-            raise vs.Error("DPIR: strength must be of GRAY8/GRAYH/GRAYS format")
+            raise vs.Error("dpir: strength must be of GRAY8/GRAYH/GRAYS format")
 
         if (
             strength.format.bits_per_sample != clip.format.bits_per_sample
@@ -118,10 +118,10 @@ def DPIR(
             or strength.height != clip.height
             or strength.num_frames != clip.num_frames
         ):
-            raise vs.Error("DPIR: strength must have the same bits, dimensions and number of frames as main clip")
+            raise vs.Error("dpir: strength must have the same bits, dimensions and number of frames as main clip")
 
     if os.path.getsize(os.path.join(package_dir, "drunet_color.pth")) == 0:
-        raise vs.Error("DPIR: model files have not been downloaded. run 'python -m vsdpir' first")
+        raise vs.Error("dpir: model files have not been downloaded. run 'python -m vsdpir' first")
 
     torch.backends.cuda.matmul.allow_tf32 = True
 
