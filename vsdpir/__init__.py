@@ -112,13 +112,8 @@ def dpir(
         if strength.format.id not in [vs.GRAY8, vs.GRAYH, vs.GRAYS]:
             raise vs.Error("dpir: strength must be of GRAY8/GRAYH/GRAYS format")
 
-        if (
-            strength.format.bits_per_sample != clip.format.bits_per_sample
-            or strength.width != clip.width
-            or strength.height != clip.height
-            or strength.num_frames != clip.num_frames
-        ):
-            raise vs.Error("dpir: strength must have the same bits, dimensions and number of frames as main clip")
+        if strength.width != clip.width or strength.height != clip.height or strength.num_frames != clip.num_frames:
+            raise vs.Error("dpir: strength must have the same dimensions and number of frames as main clip")
 
     if os.path.getsize(os.path.join(package_dir, "drunet_color.pth")) == 0:
         raise vs.Error("dpir: model files have not been downloaded. run 'python -m vsdpir' first")
