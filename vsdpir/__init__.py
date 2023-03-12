@@ -74,7 +74,7 @@ def dpir(
     :param task:                    Task to perform. Must be 'deblock' or 'denoise'.
     :param strength:                Strength for deblocking/denoising.
                                     Defaults to 50.0 for 'deblock', 5.0 for 'denoise'.
-                                    Also accepts a GRAY8/GRAYH/GRAYS clip for varying strength.
+                                    Also accepts a clip of GRAY format for varying strength.
     :param tile_w:                  Tile width. As too large images result in the out of GPU memory issue, so this tile
                                     option will first crop input images into tiles, and then process each of them.
                                     Finally, they will be merged into one image. 0 denotes for do not use tile.
@@ -109,8 +109,8 @@ def dpir(
         raise vs.Error("dpir: task must be 'deblock' or 'denoise'")
 
     if isinstance(strength, vs.VideoNode):
-        if strength.format.id not in [vs.GRAY8, vs.GRAYH, vs.GRAYS]:
-            raise vs.Error("dpir: strength must be of GRAY8/GRAYH/GRAYS format")
+        if strength.format.color_family != vs.GRAY:
+            raise vs.Error("dpir: strength must be of GRAY format")
 
         if strength.width != clip.width or strength.height != clip.height or strength.num_frames != clip.num_frames:
             raise vs.Error("dpir: strength must have the same dimensions and number of frames as main clip")
