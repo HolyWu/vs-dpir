@@ -18,7 +18,7 @@ from vsutil import fallback
 
 from .network_unet import UNetRes
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
