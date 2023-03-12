@@ -120,17 +120,20 @@ def dpir(
 
     torch.set_float32_matmul_precision("high")
 
+    color_or_gray = "color" if clip.format.color_family == vs.RGB else "gray"
+
     fp16 = clip.format.bits_per_sample == 16
     if fp16:
-        torch.set_default_tensor_type(torch.HalfTensor)
+        dtype = torch.half
+        noise_format = vs.GRAYH
+    else:
+        dtype = torch.float
+        noise_format = vs.GRAYS
 
     device = torch.device("cuda", device_index)
 
     stream = [torch.cuda.Stream(device=device) for _ in range(num_streams)]
     stream_lock = [Lock() for _ in range(num_streams)]
-
-    color_or_gray = "color" if clip.format.color_family == vs.RGB else "gray"
-    noise_format = vs.GRAYH if fp16 else vs.GRAYS
 
     if task == "deblock":
         model_name = f"drunet_deblocking_{color_or_gray}.pth"
@@ -152,6 +155,8 @@ def dpir(
     module = UNetRes(in_nc=clip.format.num_planes + 1, out_nc=clip.format.num_planes)
     module.load_state_dict(torch.load(model_path, map_location="cpu"))
     module.eval().to(device, memory_format=torch.channels_last)
+    if fp16:
+        module.half()
 
     if tile_w > 0 and tile_h > 0:
         pad_w = math.ceil(min(tile_w + 2 * tile_pad, clip.width) / 8) * 8
@@ -170,7 +175,7 @@ def dpir(
 
         for i in range(num_streams):
             static_input.append(
-                torch.zeros((1, clip.format.num_planes + 1, pad_h, pad_w), device=device).to(
+                torch.zeros((1, clip.format.num_planes + 1, pad_h, pad_w), dtype=dtype, device=device).to(
                     memory_format=torch.channels_last
                 )
             )
@@ -218,7 +223,7 @@ def dpir(
             module = lowerer(
                 module,
                 [
-                    torch.zeros((1, clip.format.num_planes + 1, pad_h, pad_w), device=device).to(
+                    torch.zeros((1, clip.format.num_planes + 1, pad_h, pad_w), dtype=dtype, device=device).to(
                         memory_format=torch.channels_last
                     )
                 ],
