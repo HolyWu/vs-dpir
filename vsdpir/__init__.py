@@ -10,7 +10,6 @@ import tensorrt
 import torch
 import torch.nn.functional as F
 import vapoursynth as vs
-from functorch.compile import memory_efficient_fusion
 from torch_tensorrt.fx import LowerSetting
 from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
@@ -31,12 +30,6 @@ class Backend:
         module: torch.nn.Module
 
     @dataclass
-    class CUDAGraphs:
-        graph: list[torch.cuda.CUDAGraph]
-        static_input: list[torch.Tensor]
-        static_output: list[torch.Tensor]
-
-    @dataclass
     class TensorRT:
         module: list[torch.nn.Module]
 
@@ -46,8 +39,6 @@ def dpir(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 1,
-    nvfuser: bool = False,
-    cuda_graphs: bool = False,
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
     trt_cache_path: str = package_dir,
@@ -63,9 +54,6 @@ def dpir(
                                     performs inference in FP16 mode while RGBS/GRAYS performs inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
-    :param nvfuser:                 Enable fusion through nvFuser. Not allowed in TensorRT. (experimental)
-    :param cuda_graphs:             Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels
-                                    sequentially. Not allowed in TensorRT.
     :param trt:                     Use TensorRT for high-performance inference.
     :param trt_max_workspace_size:  Maximum workspace size for TensorRT engine.
     :param trt_cache_path:          Path for TensorRT engine file. Engine will be cached when it's built for the first
@@ -95,13 +83,6 @@ def dpir(
 
     if num_streams > vs.core.num_threads:
         raise vs.Error("dpir: setting num_streams greater than `core.num_threads` is useless")
-
-    if trt:
-        if nvfuser:
-            raise vs.Error("dpir: nvfuser and trt are mutually exclusive")
-
-        if cuda_graphs:
-            raise vs.Error("dpir: cuda_graphs and trt are mutually exclusive")
 
     task = task.lower()
 
@@ -165,34 +146,7 @@ def dpir(
         pad_w = math.ceil(clip.width / 8) * 8
         pad_h = math.ceil(clip.height / 8) * 8
 
-    if nvfuser:
-        module = memory_efficient_fusion(module)
-
-    if cuda_graphs:
-        graph: list[torch.cuda.CUDAGraph] = []
-        static_input: list[torch.Tensor] = []
-        static_output: list[torch.Tensor] = []
-
-        for i in range(num_streams):
-            static_input.append(
-                torch.zeros((1, clip.format.num_planes + 1, pad_h, pad_w), dtype=dtype, device=device).to(
-                    memory_format=torch.channels_last
-                )
-            )
-
-            torch.cuda.synchronize(device=device)
-            stream[i].wait_stream(torch.cuda.current_stream(device=device))
-            with torch.cuda.stream(stream[i]):
-                module(static_input[i])
-            torch.cuda.current_stream(device=device).wait_stream(stream[i])
-            torch.cuda.synchronize(device=device)
-
-            graph.append(torch.cuda.CUDAGraph())
-            with torch.cuda.graph(graph[i], stream=stream[i]):
-                static_output.append(module(static_input[i]))
-
-        backend = Backend.CUDAGraphs(graph, static_input, static_output)
-    elif trt:
+    if trt:
         device_name = torch.cuda.get_device_name(device)
         trt_version = tensorrt.__version__
         dimensions = f"{pad_w}x{pad_h}"
@@ -258,11 +212,7 @@ def dpir(
                 h, w = img.shape[2:]
                 img = F.pad(img, (0, pad_w - w, 0, pad_h - h), "reflect")
 
-                if cuda_graphs:
-                    static_input[local_index].copy_(img)
-                    graph[local_index].replay()
-                    output = static_output[local_index]
-                elif trt:
+                if trt:
                     output = module[local_index](img)
                 else:
                     output = module(img)
@@ -293,7 +243,7 @@ def tile_process(
     tile_pad: int,
     pad_w: int,
     pad_h: int,
-    backend: Backend.Eager | Backend.CUDAGraphs | Backend.TensorRT,
+    backend: Backend.Eager | Backend.TensorRT,
     index: int,
 ) -> torch.Tensor:
     batch, channel, height, width = img.shape
@@ -335,11 +285,7 @@ def tile_process(
             input_tile = F.pad(input_tile, (0, pad_w - w, 0, pad_h - h), mode)
 
             # process tile
-            if isinstance(backend, Backend.CUDAGraphs):
-                backend.static_input[index].copy_(input_tile)
-                backend.graph[index].replay()
-                output_tile = backend.static_output[index]
-            elif isinstance(backend, Backend.TensorRT):
+            if isinstance(backend, Backend.TensorRT):
                 output_tile = backend.module[index](input_tile)
             else:
                 output_tile = backend.module(input_tile)
