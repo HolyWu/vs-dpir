@@ -9,11 +9,10 @@ import numpy as np
 import tensorrt
 import torch
 import torch.nn.functional as F
-import vapoursynth as vs
 from torch_tensorrt.fx import LowerSetting
 from torch_tensorrt.fx.lower import Lowerer
 from torch_tensorrt.fx.utils import LowerPrecision
-from vsutil import fallback
+from vstools import check_variable, fallback, vs
 
 from .network_unet import UNetRes
 
@@ -69,8 +68,7 @@ def dpir(
     :param tile_h:                  Tile height.
     :param tile_pad:                Pad size for each tile, to remove border artifacts.
     """
-    if not isinstance(clip, vs.VideoNode):
-        raise vs.Error("dpir: this is not a clip")
+    assert check_variable(clip, dpir)
 
     if clip.format.id not in [vs.RGBH, vs.RGBS, vs.GRAYH, vs.GRAYS]:
         raise vs.Error("dpir: only RGBH/RGBS/GRAYH/GRAYS formats are supported")
@@ -90,6 +88,8 @@ def dpir(
         raise vs.Error("dpir: task must be 'deblock' or 'denoise'")
 
     if isinstance(strength, vs.VideoNode):
+        assert check_variable(strength, dpir)
+
         if strength.format.color_family != vs.GRAY:
             raise vs.Error("dpir: strength must be of GRAY format")
 
