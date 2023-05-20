@@ -20,7 +20,7 @@ __version__ = "3.0.1"
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
-package_dir = os.path.dirname(os.path.realpath(__file__))
+model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
 
 class Backend:
@@ -40,7 +40,7 @@ def dpir(
     num_streams: int = 1,
     trt: bool = False,
     trt_max_workspace_size: int = 1 << 30,
-    trt_cache_path: str = package_dir,
+    trt_cache_path: str = model_dir,
     task: str = "deblock",
     strength: float | vs.VideoNode | None = None,
     tile_w: int = 0,
@@ -96,7 +96,7 @@ def dpir(
         if strength.width != clip.width or strength.height != clip.height or strength.num_frames != clip.num_frames:
             raise vs.Error("dpir: strength must have the same dimensions and number of frames as main clip")
 
-    if os.path.getsize(os.path.join(package_dir, "drunet_color.pth")) == 0:
+    if os.path.getsize(os.path.join(model_dir, "drunet_color.pth")) == 0:
         raise vs.Error("dpir: model files have not been downloaded. run 'python -m vsdpir' first")
 
     torch.set_float32_matmul_precision("high")
@@ -131,7 +131,7 @@ def dpir(
         else:
             noise = clip.std.BlankClip(format=noise_format, color=fallback(strength, 5.0) / 255, keep=True)
 
-    model_path = os.path.join(package_dir, model_name)
+    model_path = os.path.join(model_dir, model_name)
 
     module = UNetRes(in_nc=clip.format.num_planes + 1, out_nc=clip.format.num_planes)
     module.load_state_dict(torch.load(model_path, map_location="cpu"))
