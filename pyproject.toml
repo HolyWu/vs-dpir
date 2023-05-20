@@ -21,7 +21,7 @@ dependencies = [
   "numpy",
   "requests",
   "tensorrt>=8.6.1",
-  "torch>=1.13.0",
+  "torch>=2.0.1",
   "torch-tensorrt-fx-only>=1.3.0",
   "tqdm",
   "VapourSynth>=55",
