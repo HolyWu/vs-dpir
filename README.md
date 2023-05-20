@@ -5,7 +5,7 @@ Plug-and-Play Image Restoration with Deep Denoiser Prior, based on https://githu
 ## Dependencies
 - [NumPy](https://numpy.org/install)
 - [PyTorch](https://pytorch.org/get-started) >=2.0.1
-- [VapourSynth](http://www.vapoursynth.com/) R55+
+- [VapourSynth](http://www.vapoursynth.com/) >=R60
 
 `trt` requires additional runtime libraries:
 - [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) 11.8
