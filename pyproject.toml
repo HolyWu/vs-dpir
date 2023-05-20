@@ -18,12 +18,12 @@ classifiers = [
   "Topic :: Multimedia :: Video"
 ]
 dependencies = [
-  "numpy",
-  "requests",
+  "numpy>=1.24.3",
+  "requests>=2.30.0",
   "tensorrt>=8.6.1",
   "torch>=2.0.1",
   "torch-tensorrt-fx-only>=1.5.0.dev0",
-  "tqdm",
+  "tqdm>=4.65.0",
   "VapourSynth>=60",
   "vstools>=2.1.0"
 ]
