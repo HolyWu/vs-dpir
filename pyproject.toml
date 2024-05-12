@@ -8,26 +8,32 @@ version = "3.1.1"
 description = "DPIR function for VapourSynth"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
-authors = [{name = "HolyWu", email = "holywu@gmail.com"}]
-keywords = ["DPIR", "VapourSynth"]
+license-files = { paths = ["LICENSE"] }
+authors = [
+  { name = "HolyWu", email = "holywu@gmail.com" },
+]
+keywords = [
+  "DPIR",
+  "PyTorch",
+  "TensorRT",
+  "VapourSynth",
+]
 classifiers = [
+  "Environment :: GPU :: NVIDIA CUDA",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3 :: Only",
-  "Topic :: Multimedia :: Video"
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video",
 ]
 dependencies = [
-  "numpy>=1.24.3",
-  "requests>=2.30.0",
-  "tensorrt>=8.6.1",
-  "torch>=2.0.1",
-  "torch-tensorrt-fx-only>=1.5.0.dev0",
-  "tqdm>=4.65.0",
-  "VapourSynth>=60",
-  "vstools>=2.1.0"
+  "numpy",
+  "requests",
+  "torch>=2.3.0",
+  "tqdm",
+  "VapourSynth>=66",
+  "vstools",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/HolyWu/vs-dpir"
-"Bug Tracker" = "https://github.com/HolyWu/vs-dpir/issues"
+Homepage = "https://github.com/HolyWu/vs-dpir"
+Issues = "https://github.com/HolyWu/vs-dpir/issues"
