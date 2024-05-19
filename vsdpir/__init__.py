@@ -250,11 +250,9 @@ def dpir(
                 inputs=inputs,
                 enabled_precisions={torch.half, torch.int8} if trt_int8 else {dtype},
                 device=torch_tensorrt.Device(gpu_id=device_index),
-                num_avg_timing_iters=8,
                 workspace_size=trt_workspace_size,
                 calibrator=calibrator if trt_int8 else None,
                 truncate_long_and_double=True,
-                require_full_compilation=True,
                 min_block_size=1,
                 allow_shape_tensors=True,
             )
