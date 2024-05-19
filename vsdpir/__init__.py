@@ -43,7 +43,7 @@ def dpir(
     tile_pad: int = 8,
     trt: bool = False,
     trt_debug: bool = False,
-    trt_min_shape: list[int] = [640, 360],
+    trt_min_shape: list[int] = [128, 128],
     trt_opt_shape: list[int] = [1920, 1080],
     trt_max_shape: list[int] = [1920, 1080],
     trt_workspace_size: int = 0,
