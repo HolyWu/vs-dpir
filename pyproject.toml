@@ -31,7 +31,6 @@ dependencies = [
   "torch>=2.4.0.dev",
   "tqdm",
   "VapourSynth>=66",
-  "vstools",
 ]
 
 [project.urls]

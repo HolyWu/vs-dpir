@@ -9,7 +9,7 @@ from threading import Lock
 import numpy as np
 import torch
 import torch.nn.functional as F
-from vstools import check_variable, fallback, vs
+import vapoursynth as vs
 
 from .network_unet import UNetRes
 
@@ -82,7 +82,8 @@ def dpir(
                                     first time. Note each engine is created for specific settings such as model
                                     path/name, precision, workspace etc, and specific GPUs and it's not portable.
     """
-    assert check_variable(clip, dpir)
+    if not isinstance(clip, vs.VideoNode):
+        raise vs.Error("dpir: this is not a clip")
 
     if clip.format.id not in [vs.RGBH, vs.RGBS, vs.GRAYH, vs.GRAYS]:
         raise vs.Error("dpir: only RGBH/RGBS/GRAYH/GRAYS formats are supported")
@@ -99,8 +100,6 @@ def dpir(
         raise vs.Error("dpir: task must be 'deblock' or 'denoise'")
 
     if isinstance(strength, vs.VideoNode):
-        assert check_variable(strength, dpir)
-
         if strength.format.color_family != vs.GRAY:
             raise vs.Error("dpir: strength must be of GRAY format")
 
@@ -151,14 +150,18 @@ def dpir(
         if isinstance(strength, vs.VideoNode):
             noise = strength.std.Expr("x 100 /", format=noise_format)
         else:
-            noise = clip.std.BlankClip(format=noise_format, color=fallback(strength, 50.0) / 100, keep=True)
+            noise = clip.std.BlankClip(
+                format=noise_format, color=(50.0 if strength is None else strength) / 100, keep=True
+            )
     else:
         model_name = f"drunet_{color_or_gray}.pth"
 
         if isinstance(strength, vs.VideoNode):
             noise = strength.std.Expr("x 255 /", format=noise_format)
         else:
-            noise = clip.std.BlankClip(format=noise_format, color=fallback(strength, 5.0) / 255, keep=True)
+            noise = clip.std.BlankClip(
+                format=noise_format, color=(5.0 if strength is None else strength) / 255, keep=True
+            )
 
     module = UNetRes(in_nc=clip.format.num_planes + 1, out_nc=clip.format.num_planes)
     module.load_state_dict(torch.load(os.path.join(model_dir, model_name), map_location=device))
