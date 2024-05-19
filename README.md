@@ -3,12 +3,12 @@ Plug-and-Play Image Restoration with Deep Denoiser Prior, based on https://githu
 
 
 ## Dependencies
-- [PyTorch](https://pytorch.org/get-started/) 2.3 or later
+- [PyTorch](https://pytorch.org/get-started/) 2.4.0.dev or later
 - [VapourSynth](http://www.vapoursynth.com/) R66 or later
 
 `trt` requires additional Python packages:
 - [TensorRT](https://developer.nvidia.com/tensorrt/) 10.0.1
-- [Torch-TensorRT](https://pytorch.org/TensorRT/)
+- [Torch-TensorRT](https://pytorch.org/TensorRT/) 2.4.0.dev
 
 To install TensorRT, run `pip install tensorrt==10.0.1 tensorrt-cu12_bindings==10.0.1 tensorrt-cu12_libs==10.0.1 --extra-index-url https://pypi.nvidia.com`
 
