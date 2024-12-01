@@ -13,7 +13,7 @@ import vapoursynth as vs
 
 from .network_unet import UNetRes
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 os.environ["CI_BUILD"] = "1"
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
