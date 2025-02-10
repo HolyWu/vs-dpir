@@ -38,7 +38,7 @@ def dpir(
     clip: vs.VideoNode,
     device_index: int = 0,
     num_streams: int = 1,
-    num_batches: int = 1,
+    batch_size: int = 1,
     task: str = "deblock",
     strength: float | vs.VideoNode | None = None,
     tile: list[int] = [0, 0],
@@ -60,7 +60,7 @@ def dpir(
                                     perform inference in FP16 mode while RGBS/GRAYS perform inference in FP32 mode.
     :param device_index:            Device ordinal of the GPU.
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
-    :param num_batches:             Batch of frames per inference to perform.
+    :param batch_size:              Number of frames per batch.
     :param task:                    Task to perform. Must be 'deblock' or 'denoise'.
     :param strength:                Strength for deblocking/denoising.
                                     Defaults to 50.0 for 'deblock', 5.0 for 'denoise'.
@@ -99,8 +99,8 @@ def dpir(
     if num_streams < 1:
         raise vs.Error("dpir: num_streams must be at least 1")
 
-    if num_batches < 1:
-        raise vs.Error("dpir: num_batches must be at least 1")
+    if batch_size < 1:
+        raise vs.Error("dpir: batch_size must be at least 1")
 
     task = task.lower()
 
@@ -205,7 +205,7 @@ def dpir(
             os.path.realpath(trt_cache_dir),
             (
                 f"{model_name}"
-                + f"_batch-{num_batches}"
+                + f"_batch-{batch_size}"
                 + f"_{dimensions}"
                 + f"_{'fp16' if fp16 else 'fp32'}"
                 + f"_{torch.cuda.get_device_name(device)}"
@@ -220,7 +220,7 @@ def dpir(
         if not os.path.isfile(trt_engine_path):
             module = init_module(model_name, in_nc, device, dtype)
 
-            example_inputs = (torch.zeros((num_batches, in_nc, pad_h, pad_w), dtype=dtype, device=device),)
+            example_inputs = (torch.zeros((batch_size, in_nc, pad_h, pad_w), dtype=dtype, device=device),)
 
             if trt_static_shape:
                 dynamic_shapes = None
@@ -239,9 +239,9 @@ def dpir(
 
                 inputs = [
                     torch_tensorrt.Input(
-                        min_shape=[num_batches, in_nc] + trt_min_shape,
-                        opt_shape=[num_batches, in_nc] + trt_opt_shape,
-                        max_shape=[num_batches, in_nc] + trt_max_shape,
+                        min_shape=[batch_size, in_nc] + trt_min_shape,
+                        opt_shape=[batch_size, in_nc] + trt_opt_shape,
+                        max_shape=[batch_size, in_nc] + trt_max_shape,
                         dtype=dtype,
                     )
                 ]
@@ -288,8 +288,8 @@ def dpir(
             local_index = index
 
         with f2t_stream_locks[local_index], torch.cuda.stream(f2t_streams[local_index]):
-            img = torch.stack([frame_to_tensor(f[i], device) for i in range(num_batches)]).clamp(0.0, 1.0)
-            noise_level_map = torch.stack([frame_to_tensor(f[i + num_batches], device) for i in range(num_batches)])
+            img = torch.stack([frame_to_tensor(f[i], device) for i in range(batch_size)]).clamp(0.0, 1.0)
+            noise_level_map = torch.stack([frame_to_tensor(f[i + batch_size], device) for i in range(batch_size)])
             img = torch.cat([img, noise_level_map], dim=1)
 
             f2t_streams[local_index].synchronize()
@@ -314,20 +314,20 @@ def dpir(
 
         with t2f_stream_locks[local_index], torch.cuda.stream(t2f_streams[local_index]):
             frame = tensor_to_frame(output[0], f[0].copy(), t2f_streams[local_index])
-            for i in range(1, num_batches):
+            for i in range(1, batch_size):
                 frame.props[f"vsdpir_batch_frame{i}"] = tensor_to_frame(
                     output[i], f[0].copy(), t2f_streams[local_index]
                 )
             return frame
 
-    if (pad := (num_batches - clip.num_frames % num_batches) % num_batches) > 0:
+    if (pad := (batch_size - clip.num_frames % batch_size) % batch_size) > 0:
         clip = clip.std.DuplicateFrames([clip.num_frames - 1] * pad)
         noise = noise.std.DuplicateFrames([noise.num_frames - 1] * pad)
 
-    clips = [clip[i::num_batches] for i in range(num_batches)] + [noise[i::num_batches] for i in range(num_batches)]
+    clips = [clip[i::batch_size] for i in range(batch_size)] + [noise[i::batch_size] for i in range(batch_size)]
 
     outputs = [clips[0].std.FrameEval(lambda n: clips[0].std.ModifyFrame(clips, inference), clip_src=clips)]
-    for i in range(1, num_batches):
+    for i in range(1, batch_size):
         outputs.append(outputs[0].std.PropToClip(f"vsdpir_batch_frame{i}"))
 
     output = vs.core.std.Interleave(outputs)
