@@ -22,8 +22,10 @@ pip install -U tensorrt-cu12 tensorrt-cu12_bindings tensorrt-cu12_libs --extra-i
 ## Installation
 ```
 pip install -U vsdpir
-python -m vsdpir
 ```
+
+If you want to download all models at once, run `python -m vsdpir`. If you prefer to only download the model you
+specified at first run, set `auto_download=True` in `dpir()`.
 
 
 ## Usage

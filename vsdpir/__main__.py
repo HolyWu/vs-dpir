@@ -5,9 +5,11 @@ from tqdm import tqdm
 
 
 def download_model(url: str) -> None:
+    model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
+    os.makedirs(model_dir, exist_ok=True)
     filename = url.split("/")[-1]
     r = requests.get(url, stream=True)
-    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", filename), "wb") as f:
+    with open(os.path.join(model_dir, filename), "wb") as f:
         with tqdm(
             unit="B",
             unit_scale=True,

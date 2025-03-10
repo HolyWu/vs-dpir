@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 import vapoursynth as vs
 
+from .__main__ import download_model
 from .network_unet import UNetRes
 
 __version__ = "4.2.0"
@@ -53,6 +54,7 @@ def dpir(
     num_streams: int = 1,
     batch_size: int = 1,
     task: str = "deblock",
+    auto_download: bool = False,
     strength: float | vs.VideoNode | None = None,
     tile: list[int] = [0, 0],
     tile_pad: int = 8,
@@ -75,6 +77,7 @@ def dpir(
     :param num_streams:             Number of CUDA streams to enqueue the kernels.
     :param batch_size:              Number of frames per batch.
     :param task:                    Task to perform. Must be 'deblock' or 'denoise'.
+    :param auto_download:           Automatically download the specified model if the file has not been downloaded.
     :param strength:                Strength for deblocking/denoising.
                                     Defaults to 50.0 for 'deblock', 5.0 for 'denoise'.
                                     Also accepts a clip of GRAY format for varying strength.
@@ -152,9 +155,6 @@ def dpir(
         if any(trt_min_shape[i] >= trt_max_shape[i] for i in range(2)):
             raise vs.Error("dpir: trt_min_shape must be less than trt_max_shape")
 
-    if os.path.getsize(os.path.join(model_dir, "drunet_color.pth")) == 0:
-        raise vs.Error("dpir: model files have not been downloaded. run 'python -m vsdpir' first")
-
     torch.set_float32_matmul_precision("high")
 
     color_or_gray = "color" if clip.format.color_family == vs.RGB else "gray"
@@ -187,6 +187,15 @@ def dpir(
         else:
             noise = clip.std.BlankClip(
                 format=noise_format, color=(5.0 if strength is None else strength) / 255, keep=True
+            )
+
+    if not os.path.isfile(os.path.join(model_dir, model_name)):
+        if auto_download:
+            download_model(f"https://github.com/HolyWu/vs-dpir/releases/download/model/{model_name}")
+        else:
+            raise vs.Error(
+                "dpir: model file has not been downloaded. run `python -m vsdpir` to download all models, or set "
+                "`auto_download=True` to only download the specified model"
             )
 
     if all(t > 0 for t in tile):
