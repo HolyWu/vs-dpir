@@ -241,13 +241,10 @@ def dpir(
 
         if not os.path.isfile(trt_engine_path):
             module = init_module(model_name, in_nc, device, dtype)
-
-            example_inputs = (torch.zeros((batch_size, in_nc, pad_h, pad_w), dtype=dtype, device=device),)
+            inputs = (torch.zeros((batch_size, in_nc, pad_h, pad_w), dtype=dtype, device=device),)
 
             if trt_static_shape:
                 dynamic_shapes = None
-
-                inputs = example_inputs
             else:
                 trt_min_shape.reverse()
                 trt_opt_shape.reverse()
@@ -259,16 +256,7 @@ def dpir(
                 dim_width = _width * 8
                 dynamic_shapes = {"x0": {2: dim_height, 3: dim_width}}
 
-                inputs = [
-                    torch_tensorrt.Input(
-                        min_shape=[batch_size, in_nc] + trt_min_shape,
-                        opt_shape=[batch_size, in_nc] + trt_opt_shape,
-                        max_shape=[batch_size, in_nc] + trt_max_shape,
-                        dtype=dtype,
-                    )
-                ]
-
-            exported_program = torch.export.export(module, example_inputs, dynamic_shapes=dynamic_shapes)
+            exported_program = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
 
             module = torch_tensorrt.dynamo.compile(
                 exported_program,
@@ -283,7 +271,7 @@ def dpir(
                 optimization_level=trt_optimization_level,
             )
 
-            torch_tensorrt.save(module, trt_engine_path, output_format="torchscript", inputs=example_inputs)
+            torch_tensorrt.save(module, trt_engine_path, output_format="torchscript", inputs=inputs)
 
         module = [torch.jit.load(trt_engine_path).eval() for _ in range(num_streams)]
         backend = Backend.TensorRT(module)
@@ -359,7 +347,7 @@ def dpir(
 
 
 def init_module(model_name: str, in_nc: int, device: torch.device, dtype: torch.dtype) -> torch.nn.Module:
-    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu", weights_only=True)
+    state_dict = torch.load(os.path.join(model_dir, model_name), map_location="cpu")
 
     with torch.device("meta"):
         module = UNetRes(in_nc=in_nc, out_nc=in_nc - 1)
