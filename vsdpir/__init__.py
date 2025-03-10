@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import Lock
 
@@ -33,6 +34,18 @@ class Backend:
         module: list[torch.nn.Module]
 
 
+@contextmanager
+def redirect_stdout_to_stderr():
+    original_stdout = os.dup(1)
+    try:
+        os.dup2(2, 1)
+        yield
+    finally:
+        os.dup2(original_stdout, 1)
+        os.close(original_stdout)
+
+
+@redirect_stdout_to_stderr()
 @torch.inference_mode()
 def dpir(
     clip: vs.VideoNode,
